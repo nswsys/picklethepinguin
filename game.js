@@ -111,6 +111,21 @@ let shake = 0;           // intensidad restante del "screen shake"
 let squash = 0;          // squash & stretch (-1 estirado .. 1 aplastado)
 let paused = false;
 
+// Power-ups: al comer FISH_PER_POWERUP peces se activa uno AL AZAR.
+let fishEaten = 0;       // peces comidos hacia el próximo power-up
+let power = null;        // power-up activo: "shield" | "magnet" | "fly" | "slow"
+let powerT = 0;          // fotogramas restantes del power-up activo
+let timeScale = 1;       // 1 normal, 0.5 en cámara lenta (afecta al mundo)
+let powerBannerT = 0;    // cartel "¡SHIELD!" al activar
+let powerBannerText = "";
+let powerBannerColor = "#fff";
+const FISH_PER_POWERUP = 5;
+const FLY_FLAP = -7.5;   // impulso de cada aleteo durante el vuelo
+const POWERS = ["shield", "magnet", "fly", "slow"];
+const POWER_DUR   = { shield: 360, magnet: 360, fly: 300, slow: 300 }; // frames @60fps
+const POWER_LABEL = { shield: "SHIELD!", magnet: "FISH MAGNET!", fly: "FLIGHT!", slow: "SLOW-MO!" };
+const POWER_COLOR = { shield: "#5fd0ff", magnet: "#ffd34d", fly: "#a98bff", slow: "#7dff9b" };
+
 // ---------------------------------------------------------------------------
 //  Obstáculos
 // ---------------------------------------------------------------------------
@@ -315,6 +330,37 @@ function playChomp() {
   o.start(t); o.stop(t + 0.11);
 }
 
+// arpegio brillante ascendente al activar un power-up
+function playPowerUp() {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime;
+  [659, 880, 1175, 1568].forEach((f, i) => {   // mi la re sol (agudo)
+    const o = a.createOscillator(), g = a.createGain();
+    const t0 = t + i * 0.07;
+    o.type = "triangle";
+    o.frequency.setValueAtTime(f, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+    o.connect(g).connect(a.destination);
+    o.start(t0); o.stop(t0 + 0.22);
+  });
+}
+
+// activa un power-up al azar y lanza su cartel
+function activatePower() {
+  power = POWERS[Math.floor(Math.random() * POWERS.length)];
+  powerT = POWER_DUR[power];
+  powerBannerText = POWER_LABEL[power];
+  powerBannerColor = POWER_COLOR[power];
+  powerBannerT = 95;
+  playPowerUp();
+  // pequeño estallido de chispas del color del power-up alrededor del pingüino
+  const d = penguinDims();
+  spawnParticles(penguin.x + d.w / 2, penguin.y - d.h / 2, 16,
+    { color: powerBannerColor, speed: 4, life: 26, gravity: 0.04, size: 2.6 });
+}
+
 // --- Voz: elegir la más natural disponible (evita el tono robótico básico) ---
 let preferredVoice = null;
 function pickVoice() {
@@ -360,6 +406,13 @@ function sayRandomWord() {
 function jump() {
   if (paused) { paused = false; return; }   // un toque también reanuda
   if (state === State.READY || state === State.OVER) { start(); return; }
+  if (power === "fly") {       // durante el vuelo: aletear en el aire
+    penguin.vy = FLY_FLAP;
+    penguin.onGround = false;
+    squash = -0.5;
+    playJump();
+    return;
+  }
   if (penguin.onGround) {
     penguin.vy = JUMP_V;
     penguin.onGround = false;
@@ -428,6 +481,11 @@ function start() {
   shake = 0;
   squash = 0;
   paused = false;
+  fishEaten = 0;
+  power = null;
+  powerT = 0;
+  timeScale = 1;
+  powerBannerT = 0;
   penguin.y = GROUND_Y;
   penguin.vy = 0;
   penguin.onGround = true;
@@ -466,9 +524,14 @@ function update() {
   frame++;
   if (state !== State.PLAYING || paused) return;
 
-  // física del pingüino
-  penguin.vy += GRAVITY;
+  // power-up activo: cuenta atrás y cámara lenta
+  timeScale = power === "slow" ? 0.5 : 1;
+  if (power) { if (--powerT <= 0) { power = null; timeScale = 1; } }
+
+  // física del pingüino (gravedad más suave mientras vuela)
+  penguin.vy += power === "fly" ? 0.34 : GRAVITY;
   penguin.y += penguin.vy;
+  if (penguin.y < 50) { penguin.y = 50; if (penguin.vy < 0) penguin.vy = 0; } // techo
   if (penguin.y >= GROUND_Y) {
     if (!penguin.onGround) {
       // acaba de aterrizar: polvo de nieve + aplastamiento
@@ -497,8 +560,9 @@ function update() {
   if (!celebrated && prevBest > 0 && score > prevBest) spawnFishReward();
   updateFishes();
 
-  // spawn
-  if (--spawnTimer <= 0) {
+  // spawn (el ritmo se ajusta a la cámara lenta para no amontonar obstáculos)
+  spawnTimer -= timeScale;
+  if (spawnTimer <= 0) {
     spawnObstacle();
     spawnTimer = nextSpawnGap();
   }
@@ -506,16 +570,37 @@ function update() {
   // mover obstáculos + colisión
   const box = penguinBox();
   for (const o of obstacles) {
-    o.x -= speed;
+    o.x -= speed * timeScale;
     if (o.type === "bird") o.wing = (o.wing + 0.2) % (Math.PI * 2);
-    if (hit(box, obstacleBox(o))) gameOver();
+    if (hit(box, obstacleBox(o))) {
+      if (power === "shield") {
+        // el escudo rompe el obstáculo en vez de matarte
+        o.smashed = true;
+        shake = 6;
+        playCrash();
+        spawnParticles(o.x + o.w / 2, o.y - o.h / 2, 12,
+          { color: o.type === "bird" ? "#cdd6e6" : "#bfe6f6",
+            speed: 4, life: 26, gravity: 0.2, size: 2.6 });
+      } else {
+        gameOver();
+      }
+    }
   }
-  obstacles = obstacles.filter((o) => o.x + o.w > -10);
+  obstacles = obstacles.filter((o) => !o.smashed && o.x + o.w > -10);
 
   // peces coleccionables: aparecen de vez en cuando y suman puntos
-  if (--coinTimer <= 0) { spawnCoin(); coinTimer = 130 + Math.random() * 170; }
+  coinTimer -= timeScale;
+  if (coinTimer <= 0) { spawnCoin(); coinTimer = 130 + Math.random() * 170; }
+  const mouth = penguinMouth();
   for (const c of coins) {
-    c.x -= speed;
+    if (power === "magnet") {
+      // el imán atrae todos los peces hacia el pingüino
+      const dx = mouth.x - c.x, dy = mouth.y - c.y, d = Math.hypot(dx, dy) || 1;
+      c.x += (dx / d) * 8;
+      c.y += (dy / d) * 8;
+    } else {
+      c.x -= speed * timeScale;
+    }
     c.bob += 0.12;
     const cb = { x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 };
     if (hit(box, cb)) {
@@ -524,6 +609,11 @@ function update() {
       playChomp();
       spawnParticles(c.x, c.y, 8,
         { color: "#ffd34d", speed: 2.4, life: 24, gravity: 0.05, size: 2.4 });
+      // progreso hacia el próximo power-up (solo si no hay uno activo)
+      if (!power && ++fishEaten >= FISH_PER_POWERUP) {
+        fishEaten = 0;
+        activatePower();
+      }
     }
   }
   coins = coins.filter((c) => !c.collected && c.x + c.r > -10);
@@ -611,8 +701,51 @@ function draw() {
   for (const f of fishes) if (f.delay <= 0) drawFish(f.x, f.y, 11);
   ctx.restore();
   drawSnow();          // nieve por encima de todo (sin sacudida)
+  drawPowerHud();
   drawBanner();
+  drawPowerBanner();
   if (paused) drawPauseScreen();
+}
+
+// Esquina superior izquierda: medidor de peces, o barra del power-up activo
+function drawPowerHud() {
+  if (state !== State.PLAYING) return;
+  const x = 14, y = 16;
+  ctx.save();
+  ctx.textAlign = "left";
+  if (power) {
+    const frac = powerT / POWER_DUR[power];
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillStyle = POWER_COLOR[power];
+    ctx.fillText(POWER_LABEL[power], x, y);
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    roundRect(x, y + 6, 96, 6, 3); ctx.fill();
+    ctx.fillStyle = POWER_COLOR[power];
+    roundRect(x, y + 6, 96 * frac, 6, 3); ctx.fill();
+  } else {
+    // peces "comidos" hacia el próximo power-up
+    for (let i = 0; i < FISH_PER_POWERUP; i++) {
+      ctx.globalAlpha = i < fishEaten ? 1 : 0.25;
+      drawFish(x + 8 + i * 17, y + 4, 6);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+// Cartel grande al activar un power-up (se desvanece)
+function drawPowerBanner() {
+  if (powerBannerT <= 0) return;
+  powerBannerT--;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, powerBannerT / 25);
+  ctx.textAlign = "center";
+  ctx.font = "bold 30px system-ui, sans-serif";
+  ctx.lineWidth = 6; ctx.strokeStyle = "#fff";
+  ctx.strokeText(powerBannerText, W / 2, 116);
+  ctx.fillStyle = powerBannerColor;
+  ctx.fillText(powerBannerText, W / 2, 116);
+  ctx.restore();
 }
 
 // --- Cielo con biomas: día → atardecer → noche, cambia cada 450 pts --------
@@ -710,7 +843,7 @@ function drawBanner() {
 function drawBackground() {
   // colinas/montañas lejanas con parallax suave
   ctx.fillStyle = "#cfeeff";
-  const off = (frame * speed * 0.2) % 300;
+  const off = (frame * speed * timeScale * 0.2) % 300;
   for (let i = -1; i < 4; i++) {
     const x = i * 300 - off;
     ctx.beginPath();
@@ -723,7 +856,7 @@ function drawBackground() {
 }
 
 function drawGround() {
-  groundOffset = (groundOffset + speed) % 40;
+  groundOffset = (groundOffset + speed * timeScale) % 40;
   ctx.strokeStyle = "#8fb8cc";
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -828,6 +961,24 @@ function drawPenguin() {
   const { w, h } = penguinDims();
   const dx = penguin.x;
   const dy = penguin.y - h;
+
+  // aura del escudo (parpadea en los últimos instantes para avisar)
+  if (power === "shield") {
+    const cx = dx + w / 2, cy = penguin.y - h / 2;
+    const r = Math.max(w, h) * 0.7 + Math.sin(frame * 0.2) * 3;
+    const blink = powerT < 60 && (frame % 10 < 5) ? 0.25 : 0.6;
+    ctx.save();
+    const g = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r);
+    g.addColorStop(0, "rgba(95, 208, 255, 0)");
+    g.addColorStop(0.8, `rgba(95, 208, 255, ${blink * 0.5})`);
+    g.addColorStop(1, "rgba(95, 208, 255, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(160, 230, 255, ${blink})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
 
   // squash & stretch anclado en los pies (estira al saltar, aplasta al caer)
   const sx = 1 + squash * 0.16;

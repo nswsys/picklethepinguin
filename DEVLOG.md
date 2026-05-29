@@ -28,7 +28,18 @@ servidor y sin dependencias en tiempo de ejecución.
 | Empezar / reintentar | cualquier tecla de salto | tocar la pantalla |
 
 Recoge los **peces dorados** que aparecen en vuelo o en el suelo para sumar
-puntos extra. El cielo cambia de **día → atardecer → noche** cada 450 pts.
+puntos extra. **Cada 5 peces** se activa un **power-up al azar**:
+
+| Power-up | Efecto |
+|---|---|
+| 🛡️ **Shield** | Aura azul ~6s: atraviesas y rompes obstáculos sin morir. |
+| 🧲 **Fish Magnet** | ~6s: todos los peces vuelan hacia ti (combo de puntos). |
+| 🕊️ **Flight** | ~5s: gravedad suave; toca/`Espacio` = aletear y subir. |
+| 🐌 **Slow-Mo** | ~5s: el mundo va a mitad de velocidad; tú respondes igual. |
+
+El medidor (arriba a la izquierda) muestra cuántos peces llevas; al activarse
+se ve una barra con el tiempo restante. El cielo cambia de **día → atardecer →
+noche** cada 450 pts.
 
 Esquiva los **témpanos de hielo** (suelo) y los **pájaros** (vuelan, aparecen tras
 250 pts; agáchate o salta). La velocidad sube con el tiempo. El récord se guarda
@@ -81,6 +92,7 @@ picklethepinguin/
 - **Game feel**: partículas (nieve, polvo, salpicadura), *screen shake* y
   *squash & stretch* del pingüino.
 - **Peces coleccionables** que dan puntos extra durante la partida.
+- **Power-ups aleatorios** al comer 5 peces: escudo, imán, vuelo o cámara lenta.
 - **Biomas día/atardecer/noche** según la puntuación (con estrellas de noche).
 - **Pausa** con `P` y automática al perder el foco de la pestaña.
 - **Idioma**: interfaz en inglés.
@@ -141,6 +153,10 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
 | Palabras de choque | arreglo `CRASH_WORDS` |
 | Intervalo del sonido de puntos | `Math.floor(score / 100)` en `update()` |
 | Cantidad de peces de recompensa | bucle en `spawnFishReward()` |
+| Peces para activar power-up | `FISH_PER_POWERUP` |
+| Duración de cada power-up | `POWER_DUR` (frames a 60fps) |
+| Qué power-ups pueden salir | arreglo `POWERS` |
+| Fuerza del aleteo al volar | `FLY_FLAP` |
 
 ## Historial de lo que hemos hecho
 1. **Análisis y arranque**: definimos un *endless runner* en HTML5/Canvas/JS.
@@ -171,11 +187,17 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
    - **Peces coleccionables** durante la partida (+25 pts, con "nom" y chispas).
    - **Biomas día/atardecer/noche** (con estrellas titilantes) según la
      puntuación.
+9. **Power-ups aleatorios**: al comer 5 peces se activa uno al azar de cuatro
+   (escudo, imán de peces, vuelo y cámara lenta), con medidor de progreso,
+   cartel al activarse, barra de tiempo restante y un arpegio propio. El escudo
+   rompe obstáculos; el imán atrae peces; el vuelo cambia el control a "aletear";
+   la cámara lenta ralentiza el mundo (y ajusta el ritmo de spawn para no
+   amontonar obstáculos).
 
 ### Ideas pendientes / posibles mejoras
 - Tipografía más "de juego" en los títulos.
 - Pájaros más rápidos que el suelo / patrones de vuelo (subir-bajar).
-- Power-ups con efecto (escudo temporal, imán de peces).
+- Más tipos de power-up (doble salto, multiplicador x2) o elegirlos en vez de azar.
 - Tabla de récords local (top 5) y logros simples.
 - Sprite propio para los pájaros (otra manualidad).
 - Transición suave entre biomas (en vez del cambio brusco cada 450 pts).
