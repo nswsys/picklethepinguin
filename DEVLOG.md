@@ -206,6 +206,28 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
       sin scroll ni rebote (`overflow/overscroll`), y footer oculto en pantallas
       bajas para ganar alto.
 
+11. **PWA (instalable como app)**: `manifest.webmanifest` (pantalla completa,
+    horizontal, iconos), `sw.js` (service worker cache-first → funciona offline),
+    iconos generados con `make_icons.py` desde el sprite del pingüino, y los
+    meta de iOS. Al abrir el link en el móvil se puede "Añadir a pantalla de
+    inicio" y se lanza como app, sin barra del navegador. Requiere HTTPS
+    (GitHub Pages lo da gratis).
+
+## Publicar como app (PWA)
+1. **Hospedar en HTTPS** (obligatorio para PWA). Lo más fácil: **GitHub Pages**
+   → repo en GitHub → *Settings → Pages → Source: `main` / `/root`*. Da una URL
+   tipo `https://nswsys.github.io/picklethepinguin/`.
+2. **Compartir el link**. Quien lo abra en el móvil verá la opción del navegador
+   *"Añadir a pantalla de inicio"* (Android/Chrome muestra incluso un banner de
+   instalación; en iOS: Compartir → Añadir a pantalla de inicio).
+3. **Listo**: el icono del pingüino queda en el inicio y abre el juego a
+   pantalla completa y en horizontal, como una app nativa. Funciona sin conexión
+   gracias al service worker.
+
+> Para regenerar los iconos: `.venv/bin/python make_icons.py`. Si cambias algún
+> archivo del juego, sube el número de versión `CACHE` en `sw.js` para que los
+> dispositivos descarguen la versión nueva.
+
 ### Ideas pendientes / posibles mejoras
 - Tipografía más "de juego" en los títulos.
 - Pájaros más rápidos que el suelo / patrones de vuelo (subir-bajar).
