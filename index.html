@@ -41,6 +41,13 @@
     // Registra el service worker (necesario para instalar la PWA y jugar offline)
     if ("serviceWorker" in navigator) {
       addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+      // Cuando una versión nueva toma el control, recarga una vez para mostrarla.
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
     }
   </script>
 </body>

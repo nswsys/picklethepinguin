@@ -1,6 +1,11 @@
 // ===========================================================================
 //  Pickle the Penguin 🐧  —  endless runner
 // ---------------------------------------------------------------------------
+//  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
+//  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
+//  el número de CACHE en sw.js.
+const VERSION = "v3";
+// ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas en SPRITES de abajo. Si una ruta está vacía
 //  o la imagen no carga, se dibuja un pingüino placeholder automáticamente.
@@ -734,7 +739,22 @@ function draw() {
   drawPowerHud();
   drawBanner();
   drawPowerBanner();
+  drawVersion();
   if (paused) drawPauseScreen();
+}
+
+// Número de versión, abajo a la izquierda (legible en cielo claro u oscuro)
+function drawVersion() {
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx.strokeText(VERSION, 8, H - 8);
+  ctx.fillStyle = "#2b4a5e";
+  ctx.fillText(VERSION, 8, H - 8);
+  ctx.restore();
 }
 
 // Esquina superior izquierda: medidor de peces, o barra del power-up activo

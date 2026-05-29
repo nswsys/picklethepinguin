@@ -1,6 +1,6 @@
 // Service worker de Pickle the Penguin — cachea todo para que funcione
 // offline y la PWA sea instalable. Sube CACHE al cambiar archivos.
-const CACHE = "pickle-v2";
+const CACHE = "pickle-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,7 +18,13 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // {cache:"reload"} fuerza bajar los archivos FRESCOS de la red al actualizar,
+  // saltándose la caché HTTP del navegador (si no, recachearía los viejos).
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })))
+    )
+  );
   self.skipWaiting();
 });
 
