@@ -157,6 +157,9 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
 | Mezcla / probabilidad de cada obstáculo | umbrales de `r` en `spawnObstacle()` |
 | Alturas de las aves (saltar/agachar) | `baseY` en `makeBird()` |
 | Hueco del témpano-arco (deslizarse) | `bottom` en `makeOverhang()` |
+| Cuántos récords se guardan | `MAX_SCORES` |
+| Duración / fundido de los biomas | `BIOME_LEN`, `BIOME_FADE` |
+| Versión mostrada en pantalla | `VERSION` (game.js) + `CACHE` (sw.js) |
 | Palabras de choque | arreglo `CRASH_WORDS` |
 | Intervalo del sonido de puntos | `Math.floor(score / 100)` en `update()` |
 | Cantidad de peces de recompensa | bucle en `spawnFishReward()` |
@@ -241,6 +244,17 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
     **témpano-arco** colgante con hueco a ras de suelo que obliga a
     **deslizarse/agacharse** (le da uso al agachado). Aparición escalonada por
     puntuación (`canFly` >200, `canHard` >350).
+
+13. **Tabla de récords (top 5)** + **transición suave de biomas** + **versión en
+    pantalla**:
+    - **Top 5** en `localStorage` (`pickle_scores`): al terminar, si entras al
+      top 5 se pide el **nombre** (input HTML sobre el overlay) y se muestra la
+      lista; si no, se ve la lista directamente. Migra el récord antiguo
+      (`pickle_best`). El reinicio se bloquea mientras se teclea el nombre.
+    - **Biomas con fundido**: el cielo interpola (lerp RGB) entre día/atardecer/
+      noche durante los últimos `BIOME_FADE` pts de cada bioma, y las estrellas
+      se funden según la "nocturnidad".
+    - **`VERSION` en pantalla** (abajo-izq.) para confirmar la build en uso.
 
 ### Ideas pendientes / posibles mejoras
 - **Grieta en el suelo** (saltar un vacío; caer = perder) — anotada para después.

@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v3";
+const VERSION = "v4";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas en SPRITES de abajo. Si una ruta está vacía
@@ -40,6 +40,9 @@ const scoreEl = document.getElementById("score");
 const bestEl = document.getElementById("best");
 const overlay = document.getElementById("overlay");
 const overlayMsg = document.getElementById("overlay-msg");
+const nameForm = document.getElementById("name-form");
+const nameInput = document.getElementById("name-input");
+const leaderboardEl = document.getElementById("leaderboard");
 
 // ---------------------------------------------------------------------------
 //  Carga de imágenes (con fallback)
@@ -65,8 +68,77 @@ const State = { READY: "ready", PLAYING: "playing", OVER: "over" };
 let state = State.READY;
 
 let score = 0;
-let best = Number(localStorage.getItem("pickle_best") || 0);
+let enteringName = false;          // true mientras se teclea el nombre del récord
+
+// ---------------------------------------------------------------------------
+//  Tabla de récords (top 5 en localStorage)
+// ---------------------------------------------------------------------------
+const SCORES_KEY = "pickle_scores";
+const MAX_SCORES = 5;
+
+function loadScores() {
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(SCORES_KEY)) || []; } catch (e) {}
+  if (!Array.isArray(arr)) arr = [];
+  // migra el récord antiguo de una sola cifra, si lo hubiera
+  const old = Number(localStorage.getItem("pickle_best") || 0);
+  if (old > 0 && !arr.some((e) => e && e.score === old)) arr.push({ name: "YOU", score: old });
+  return arr
+    .filter((e) => e && typeof e.score === "number")
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_SCORES);
+}
+
+let scores = loadScores();
+let best = scores.length ? scores[0].score : 0;
 bestEl.textContent = "HI " + String(best).padStart(4, "0");
+
+function qualifies(s) {
+  s = Math.floor(s);
+  if (s <= 0) return false;
+  return scores.length < MAX_SCORES || s > scores[scores.length - 1].score;
+}
+
+function addScore(name, s) {
+  const entry = { name: (name || "???").slice(0, 10), score: Math.floor(s) };
+  scores.push(entry);
+  scores.sort((a, b) => b.score - a.score);
+  scores = scores.slice(0, MAX_SCORES);
+  localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+  best = scores[0].score;
+  bestEl.textContent = "HI " + String(best).padStart(4, "0");
+  return scores.indexOf(entry);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function renderLeaderboard(highlight = -1) {
+  if (!scores.length) { leaderboardEl.classList.add("hidden"); return; }
+  leaderboardEl.classList.remove("hidden");
+  leaderboardEl.innerHTML = scores.map((e, i) =>
+    `<li class="${i === highlight ? "you" : ""}">` +
+    `<span class="rank">${i + 1}.</span>` +
+    `<span class="who">${escapeHtml(e.name)}</span>` +
+    `<span class="pts">${String(e.score).padStart(4, "0")}</span></li>`
+  ).join("");
+}
+
+// guardar el nombre del récord
+function submitName() {
+  if (!enteringName) return;
+  let name = (nameInput.value || "").trim().toUpperCase().slice(0, 10) || "YOU";
+  localStorage.setItem("pickle_lastname", name);
+  const idx = addScore(name, score);
+  enteringName = false;
+  nameForm.classList.add("hidden");
+  nameInput.blur();
+  renderLeaderboard(idx);
+  overlayMsg.innerHTML = `Saved! Score: <b>${Math.floor(score)}</b> — tap or press Space to retry`;
+}
+nameForm.addEventListener("submit", (e) => { e.preventDefault(); submitName(); });
 
 let speed = 6;           // velocidad de scroll (px por frame a 60fps)
 const BASE_SPEED = 6;
@@ -429,6 +501,7 @@ function sayRandomWord() {
 //  Controles
 // ---------------------------------------------------------------------------
 function jump() {
+  if (enteringName) return;                  // no reiniciar mientras se teclea
   if (paused) { paused = false; return; }   // un toque también reanuda
   if (state === State.READY || state === State.OVER) { start(); return; }
   if (power === "fly") {       // durante el vuelo: aletear en el aire
@@ -457,6 +530,7 @@ function togglePause() {
 }
 
 addEventListener("keydown", (e) => {
+  if (enteringName) return;   // deja escribir el nombre (Enter lo envía el form)
   if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); jump(); }
   if (e.code === "ArrowDown") { e.preventDefault(); setDuck(true); }
   if (e.code === "KeyP") { e.preventDefault(); togglePause(); }
@@ -529,17 +603,25 @@ function gameOver() {
   spawnParticles(penguin.x + d0.w / 2, penguin.y - d0.h / 2, 18,
     { color: "#9fd8f2", speed: 5, life: 34, gravity: 0.25, size: 3, lift: 2 });
 
-  const isRecord = score > best;
-  if (isRecord) {
-    best = Math.floor(score);
-    localStorage.setItem("pickle_best", best);
-    bestEl.textContent = "HI " + String(best).padStart(4, "0");
-  }
+  const finalScore = Math.floor(score);
   document.getElementById("overlay-title").textContent = word;
-  const lead = isRecord ? "New Best! " : "Game Over — ";
-  overlayMsg.innerHTML = `${lead}Score: <b>${Math.floor(score)}</b> — tap or press Space to retry`;
   document.getElementById("overlay-peng").src = SPRITES.jump || "assets/penguin_jump.png";
-  overlay.classList.add("show");
+
+  if (qualifies(finalScore)) {
+    // ¡entra al top 5! -> pedir el nombre
+    enteringName = true;
+    overlayMsg.innerHTML = `New Top 5! Score: <b>${finalScore}</b> — enter your name:`;
+    nameInput.value = localStorage.getItem("pickle_lastname") || "";
+    nameForm.classList.remove("hidden");
+    renderLeaderboard();           // muestra el top actual (aún sin la entrada nueva)
+    overlay.classList.add("show");
+    setTimeout(() => { nameInput.focus(); nameInput.select(); }, 60);
+  } else {
+    overlayMsg.innerHTML = `Game Over — Score: <b>${finalScore}</b> — tap or press Space to retry`;
+    nameForm.classList.add("hidden");
+    renderLeaderboard();
+    overlay.classList.add("show");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -804,22 +886,59 @@ const SKIES = [
   ["#ffcaa0", "#ffb3a7", "#ffe7d4"], // atardecer
   ["#15263b", "#21405e", "#41637f"], // noche
 ];
-function biomeFor(s) { return Math.floor(s / 450) % SKIES.length; }
+const BIOME_LEN = 450;   // puntos que dura cada bioma
+const BIOME_FADE = 90;   // puntos de fundido suave al final de cada bioma
+
+function hexToRgb(h) {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function lerpColor(a, b, t) {
+  const ca = hexToRgb(a), cb = hexToRgb(b);
+  const m = (i) => Math.round(ca[i] + (cb[i] - ca[i]) * t);
+  return `rgb(${m(0)},${m(1)},${m(2)})`;
+}
+
+// Estado del cielo: bioma actual, siguiente y factor de mezcla 0..1 (fundido).
+function skyState() {
+  if (state !== State.PLAYING) return { cur: SKIES[0], nxt: SKIES[0], t: 0, idx: 0 };
+  const idx = Math.floor(score / BIOME_LEN);
+  const within = score - idx * BIOME_LEN;
+  const cur = SKIES[idx % SKIES.length];
+  let t = 0, nxt = cur;
+  if (within > BIOME_LEN - BIOME_FADE) {
+    t = (within - (BIOME_LEN - BIOME_FADE)) / BIOME_FADE;   // 0..1
+    nxt = SKIES[(idx + 1) % SKIES.length];
+  }
+  return { cur, nxt, t, idx };
+}
+
+// Cuán "de noche" está el cielo ahora (0..1), para fundir las estrellas.
+function nightness() {
+  if (state !== State.PLAYING) return 0;
+  const { idx, t } = skyState();
+  const curNight = (idx % 3) === 2;
+  const nextNight = ((idx + 1) % 3) === 2;
+  if (curNight) return 1 - t;        // de noche, quizá saliendo hacia el día
+  if (nextNight) return t;           // entrando a la noche
+  return 0;
+}
 
 function drawSky() {
-  const cols = SKIES[state === State.PLAYING ? biomeFor(score) : 0];
+  const { cur, nxt, t } = skyState();
   const g = ctx.createLinearGradient(0, -20, 0, H + 20);
-  g.addColorStop(0, cols[0]);
-  g.addColorStop(0.7, cols[1]);
-  g.addColorStop(1, cols[2]);
+  g.addColorStop(0, lerpColor(cur[0], nxt[0], t));
+  g.addColorStop(0.7, lerpColor(cur[1], nxt[1], t));
+  g.addColorStop(1, lerpColor(cur[2], nxt[2], t));
   ctx.fillStyle = g;
   ctx.fillRect(-20, -20, W + 40, H + 40);
-  if (cols === SKIES[2]) drawStars();
+  const n = nightness();
+  if (n > 0.01) drawStars(n);
 }
-function drawStars() {
+function drawStars(alpha) {
   ctx.fillStyle = "#fff";
   for (const s of stars) {
-    ctx.globalAlpha = 0.45 + 0.45 * Math.sin(frame * 0.05 + s.ph);
+    ctx.globalAlpha = alpha * (0.45 + 0.45 * Math.sin(frame * 0.05 + s.ph));
     ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -1164,6 +1283,7 @@ loadImages(() => {
   if (images.duck) aspect.duck = images.duck.width / images.duck.height;
   initSnow();
   initStars();
+  renderLeaderboard();      // muestra el top 5 en la pantalla de inicio
   overlay.classList.add("show");
   requestAnimationFrame(loop);
 });

@@ -92,6 +92,56 @@ canvas {
 #overlay p { font-size: clamp(13px, 2.6vw, 18px); opacity: 0.95; }
 #overlay .hint { opacity: 0.7; font-size: clamp(11px, 2.2vw, 15px); }
 
+/* ---- Tabla de récords + entrada de nombre ---- */
+#name-form { display: flex; gap: 8px; pointer-events: auto; }
+#name-form.hidden, #leaderboard.hidden { display: none; }
+#name-input {
+  font: inherit;
+  font-size: 16px;              /* >=16px evita el zoom automático en iOS */
+  padding: 6px 10px;
+  width: 8.5em;
+  text-align: center;
+  text-transform: uppercase;
+  border: 2px solid #5fd0ff;
+  border-radius: 8px;
+  background: #0b1e2d;
+  color: #fff;
+}
+#name-save {
+  font: inherit;
+  font-weight: 700;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #5fd0ff;
+  color: #0b1e2d;
+  cursor: pointer;
+}
+#leaderboard {
+  list-style: none;
+  margin-top: 2px;
+  padding: 8px 14px;
+  min-width: clamp(190px, 40vw, 260px);
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+#leaderboard li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: clamp(12px, 2.4vw, 16px);
+}
+#leaderboard li .rank { opacity: 0.6; width: 1.4em; }
+#leaderboard li .who {
+  flex: 1; text-align: left; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+#leaderboard li .pts { font-weight: 700; }
+#leaderboard li.you { color: #ffd34d; }
+#leaderboard li.you .rank { opacity: 0.9; }
+
 .footer {
   font-size: clamp(11px, 2.2vw, 14px);
   opacity: 0.55;
@@ -135,4 +185,7 @@ canvas {
   body { gap: 4px; }
   .footer { display: none; }
   #game-wrapper { width: min(98vw, calc(98dvh * 8 / 3), 800px); }
+  /* libera alto en el overlay para que quepan tabla + formulario */
+  #overlay-peng { display: none; }
+  #overlay { gap: 5px; padding: 8px; }
 }
