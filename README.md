@@ -8,6 +8,12 @@ Hecho con HTML5 + Canvas + JavaScript puro. Sin dependencias, sin servidor.
 - **Agacharse:** flecha ↓ (o toca la mitad inferior en móvil)
 - Esquiva los témpanos de hielo y los pájaros. La velocidad sube con el tiempo.
 
+## Jugar online / instalar como app
+Está publicado como PWA: **https://nswsys.github.io/picklethepinguin/**
+(ábrelo en el móvil y "Añadir a pantalla de inicio"). Detalles de publicación
+y **el recordatorio de subir la versión del cache al actualizar** están en
+[`DEPLOY.md`](DEPLOY.md).
+
 ## Cómo ejecutarlo
 Abre `index.html` con doble clic en tu navegador. Para móvil, súbelo a GitHub
 Pages / Netlify (gratis) o usa un servidor local:
