@@ -194,6 +194,18 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
    la cámara lenta ralentiza el mundo (y ajusta el ritmo de spawn para no
    amontonar obstáculos).
 
+10. **Móvil / tablets**: que se vea y juegue bien en pantallas táctiles.
+    - **Encaje en pantalla**: el `#game-wrapper` usa `min(ancho, alto·8/3, 800px)`
+      con `dvh`, así el lienzo 8:3 siempre cabe (sobre todo en horizontal).
+    - **Tocar para empezar**: el overlay ahora tiene `pointer-events: none`, así
+      el toque llega al canvas (antes solo arrancaba con teclado en PC).
+    - **Aviso de girar**: en teléfonos en vertical (`max-width: 640px`) se oculta
+      el juego y aparece "Rotate your device" (un runner se ve diminuto en
+      vertical). Las tablets en vertical sí pueden jugar.
+    - **Notch / áreas seguras** (`viewport-fit=cover` + `env(safe-area-inset-*)`),
+      sin scroll ni rebote (`overflow/overscroll`), y footer oculto en pantallas
+      bajas para ganar alto.
+
 ### Ideas pendientes / posibles mejoras
 - Tipografía más "de juego" en los títulos.
 - Pájaros más rápidos que el suelo / patrones de vuelo (subir-bajar).

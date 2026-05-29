@@ -1,7 +1,10 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body {
-  height: 100%;
+html, body { height: 100%; }
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;            /* alto real del viewport en móvil (sin barra) */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -14,12 +17,19 @@ html, body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  overflow: hidden;              /* sin scroll en móvil */
+  overscroll-behavior: none;     /* sin "rebote" elástico */
+  /* respeta el notch / áreas seguras */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 #game-wrapper {
   position: relative;
-  width: min(92vw, 800px);
   aspect-ratio: 8 / 3;
+  /* cabe siempre: el menor entre el ancho disponible y lo que permita el alto */
+  width: min(96vw, calc((100vh - 64px) * 8 / 3), 800px);   /* fallback */
+  width: min(96vw, calc((100dvh - 64px) * 8 / 3), 800px);
 }
 
 canvas {
@@ -59,6 +69,8 @@ canvas {
   backdrop-filter: blur(2px);
   border-radius: 12px;
   color: #fff;
+  /* deja pasar el toque/clic al canvas que está debajo, para "tocar y empezar" */
+  pointer-events: none;
 }
 
 #overlay.show { display: flex; }
@@ -84,4 +96,43 @@ canvas {
   font-size: clamp(11px, 2.2vw, 14px);
   opacity: 0.55;
   text-align: center;
+  padding: 0 10px;
+}
+
+/* ---- Aviso de "girar el dispositivo" (solo teléfonos en vertical) -------- */
+#rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  background: #0b1e2d;
+  padding: 24px;
+}
+#rotate-hint .rot-emoji {
+  font-size: 64px;
+  animation: rotateHint 1.8s ease-in-out infinite;
+}
+#rotate-hint p { font-size: 18px; opacity: 0.9; max-width: 280px; }
+
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(-12deg); }
+  50% { transform: rotate(78deg); }
+}
+
+/* En teléfonos en vertical: pide girar y oculta el juego (se ve muy pequeño) */
+@media (orientation: portrait) and (max-width: 640px) {
+  #rotate-hint { display: flex; }
+  #game-wrapper, .footer { display: none; }
+}
+
+/* Pantallas bajas (teléfono en horizontal): aprovecha todo el alto */
+@media (max-height: 430px) {
+  body { gap: 4px; }
+  .footer { display: none; }
+  #game-wrapper { width: min(98vw, calc(98dvh * 8 / 3), 800px); }
 }
