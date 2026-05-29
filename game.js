@@ -129,28 +129,48 @@ const POWER_COLOR = { shield: "#5fd0ff", magnet: "#ffd34d", fly: "#a98bff", slow
 // ---------------------------------------------------------------------------
 //  Obstáculos
 // ---------------------------------------------------------------------------
+// Témpano de hielo (suelo): pequeño, grande o alto (salto más exigente)
+function makeIce() {
+  const k = Math.random();
+  let w, h;
+  if (k < 0.45) { w = 24; h = 36; }       // pequeño
+  else if (k < 0.8) { w = 34; h = 50; }   // grande
+  else { w = 28; h = 64; }                // alto
+  return { type: "ice", x: W + 20, y: GROUND_Y, w, h };
+}
+
+// Pájaro según la acción que obliga: rasante (saltar), media (agacharse),
+// en picada (baja en onda hacia ti → cronometrar).
+function makeBird(behavior) {
+  // alturas calibradas a la hitbox: de pie la cabeza llega a ~211px y agachado
+  // a ~227px, así "low" obliga a saltar y "mid" obliga a agacharse.
+  const baseY = { low: GROUND_Y - 14, mid: GROUND_Y - 38, swoop: GROUND_Y - 80 }[behavior];
+  return { type: "bird", behavior, x: W + 20, y: baseY, baseY, w: 40, h: 30, wing: 0 };
+}
+
+// Bola de nieve que rueda algo más rápido que el suelo (saltar)
+function makeSnowball() {
+  const r = 16;
+  return { type: "snowball", x: W + 20, y: GROUND_Y, w: r * 2, h: r * 2, r, roll: 0, extra: 2.6 };
+}
+
+// Témpano-arco: cuelga desde arriba y deja un hueco a ras de suelo
+// (hay que DESLIZARSE / agacharse para pasar).
+function makeOverhang() {
+  return { type: "overhang", x: W + 20, top: -10, bottom: GROUND_Y - 44, w: 42 };
+}
+
 function spawnObstacle() {
-  // pájaro volador a partir de cierta puntuación
-  const canFly = score > 250;
-  const flying = canFly && Math.random() < 0.3;
-  if (flying) {
-    const heights = [GROUND_Y - 60, GROUND_Y - 90]; // alturas para esquivar
-    obstacles.push({
-      type: "bird",
-      x: W + 20,
-      y: heights[Math.floor(Math.random() * heights.length)],
-      w: 40, h: 30, wing: 0,
-    });
-  } else {
-    const big = Math.random() < 0.4;
-    obstacles.push({
-      type: "ice",
-      x: W + 20,
-      y: GROUND_Y,
-      w: big ? 34 : 24,
-      h: big ? 50 : 36,
-    });
-  }
+  const canFly = score > 200;     // aparecen aves
+  const canHard = score > 350;    // aparecen picada, bola de nieve y arco
+  const r = Math.random();
+  let o;
+  if (canHard && r < 0.16) o = makeOverhang();
+  else if (canHard && r < 0.32) o = makeSnowball();
+  else if (canHard && r < 0.44) o = makeBird("swoop");
+  else if (canFly && r < 0.64) o = makeBird(Math.random() < 0.5 ? "low" : "mid");
+  else o = makeIce();
+  obstacles.push(o);
 }
 
 function nextSpawnGap() {
@@ -570,8 +590,14 @@ function update() {
   // mover obstáculos + colisión
   const box = penguinBox();
   for (const o of obstacles) {
-    o.x -= speed * timeScale;
-    if (o.type === "bird") o.wing = (o.wing + 0.2) % (Math.PI * 2);
+    const sp = (speed + (o.type === "snowball" ? o.extra : 0)) * timeScale;
+    o.x -= sp;
+    if (o.type === "bird") {
+      o.wing = (o.wing + 0.2) % (Math.PI * 2);
+      // la picada oscila en vertical conforme se acerca
+      if (o.behavior === "swoop") o.y = o.baseY + Math.sin((W - o.x) * 0.018) * 52;
+    }
+    if (o.type === "snowball") o.roll += sp * 0.08;
     if (hit(box, obstacleBox(o))) {
       if (power === "shield") {
         // el escudo rompe el obstáculo en vez de matarte
@@ -635,6 +661,10 @@ function penguinBox() {
 
 function obstacleBox(o) {
   const pad = 4;
+  if (o.type === "overhang") {
+    // cuelga desde arriba; el hueco queda bajo o.bottom (hay que agacharse)
+    return { x: o.x + pad, y: o.top, w: o.w - pad * 2, h: o.bottom - o.top };
+  }
   return { x: o.x + pad, y: o.y - o.h + pad, w: o.w - pad * 2, h: o.h - pad * 2 };
 }
 
@@ -879,6 +909,10 @@ function drawObstacle(o) {
     } else {
       drawBird(o);
     }
+  } else if (o.type === "snowball") {
+    drawSnowball(o);
+  } else if (o.type === "overhang") {
+    drawOverhang(o);
   } else {
     // témpano de hielo (triangulito)
     ctx.fillStyle = "#7fc7e8";
@@ -892,6 +926,43 @@ function drawObstacle(o) {
     ctx.fill();
     ctx.stroke();
   }
+}
+
+// Bola de nieve con marcas de rodadura que giran
+function drawSnowball(o) {
+  const cx = o.x + o.r, cy = o.y - o.r;
+  ctx.save();
+  ctx.fillStyle = "#f2fbff";
+  ctx.strokeStyle = "#bcd8e6";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, o.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "rgba(140, 180, 200, 0.6)";
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const a = o.roll + i * (Math.PI * 2 / 3);
+    ctx.beginPath();
+    ctx.arc(cx, cy, o.r * 0.55, a, a + 0.9);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Témpano-arco que cuelga desde arriba con carámbanos; deja el hueco abajo
+function drawOverhang(o) {
+  const x = o.x, w = o.w, top = o.top, bot = o.bottom;
+  ctx.save();
+  ctx.fillStyle = "#9bd6f0";
+  ctx.strokeStyle = "#5fa8cc";
+  ctx.lineWidth = 2;
+  roundRect(x, top, w, bot - top - 6, 6); ctx.fill(); ctx.stroke();
+  // carámbanos en el borde inferior
+  ctx.fillStyle = "#cdeefb";
+  const n = 4;
+  for (let i = 0; i < n; i++) {
+    const ix = x + 5 + i * (w - 10) / (n - 1);
+    tri(ix - 4, bot - 8, ix + 4, bot - 8, ix, bot + 7);
+  }
+  ctx.restore();
 }
 
 // Pájaro dibujado (págalo/gaviota) mirando a la izquierda, con alas que aletean

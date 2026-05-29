@@ -41,8 +41,9 @@ El medidor (arriba a la izquierda) muestra cuántos peces llevas; al activarse
 se ve una barra con el tiempo restante. El cielo cambia de **día → atardecer →
 noche** cada 450 pts.
 
-Esquiva los **témpanos de hielo** (suelo) y los **pájaros** (vuelan, aparecen tras
-250 pts; agáchate o salta). La velocidad sube con el tiempo. El récord se guarda
+Esquiva **témpanos** (salta), **pájaros** rasantes (salta) o medios (agáchate),
+los **en picada** (cronometra), la **bola de nieve** (salta) y el **témpano-arco**
+(deslízate agachándote). La variedad crece con la puntuación. El récord se guarda
 en el navegador (`localStorage`).
 
 ## Cómo ejecutarlo
@@ -76,10 +77,13 @@ picklethepinguin/
 
 ## Características del juego
 - **Personaje animado**: corre (alterna 2 frames → aleteo), salta y se agacha.
-- **Obstáculos**:
-  - *Témpanos de hielo* en el suelo (dos tamaños).
-  - *Pájaros voladores* (págalo/gaviota dibujado con alas que aletean), a partir
-    de 250 pts, a distintas alturas.
+- **Obstáculos** (variedad que escala con la puntuación):
+  - *Témpanos de hielo* en el suelo: pequeño, grande y **alto** (salto exigente).
+  - *Pájaros* (desde 200 pts) por la acción que obligan: **rasante** (saltar),
+    **medio** (agacharse) y **en picada** (baja en onda → cronometrar).
+  - *Bola de nieve* rodante, algo más rápida que el suelo (desde 350 pts).
+  - *Témpano-arco* que cuelga desde arriba con un hueco a ras de suelo: hay que
+    **deslizarse/agacharse** para pasar (desde 350 pts) — da uso al agachado.
 - **Dificultad progresiva**: la velocidad de scroll aumenta con la puntuación.
 - **Puntuación y récord** (HUD arriba a la derecha, récord persistente).
 - **Fondo polar** con montañas en *parallax* y suelo nevado en movimiento.
@@ -149,7 +153,10 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
 | Más/menos salto o gravedad | `JUMP_V`, `GRAVITY` |
 | Velocidad inicial/máxima | `BASE_SPEED`, `MAX_SPEED` |
 | Frecuencia de obstáculos | `nextSpawnGap()` |
-| Cuándo aparecen pájaros | condición `score > 250` en `spawnObstacle()` |
+| Cuándo aparecen aves / obstáculos duros | `canFly` (>200) y `canHard` (>350) en `spawnObstacle()` |
+| Mezcla / probabilidad de cada obstáculo | umbrales de `r` en `spawnObstacle()` |
+| Alturas de las aves (saltar/agachar) | `baseY` en `makeBird()` |
+| Hueco del témpano-arco (deslizarse) | `bottom` en `makeOverhang()` |
 | Palabras de choque | arreglo `CRASH_WORDS` |
 | Intervalo del sonido de puntos | `Math.floor(score / 100)` en `update()` |
 | Cantidad de peces de recompensa | bucle en `spawnFishReward()` |
@@ -228,9 +235,16 @@ Casi todo se ajusta desde constantes al inicio de `game.js`:
 > archivo del juego, sube el número de versión `CACHE` en `sw.js` para que los
 > dispositivos descarguen la versión nueva.
 
+12. **Más variedad de obstáculos**: aves en 3 niveles por acción (rasante=saltar,
+    media=agacharse, **en picada** oscilando en vertical), **bola de nieve**
+    rodante (más rápida que el suelo), **témpano alto** (salto exigente) y
+    **témpano-arco** colgante con hueco a ras de suelo que obliga a
+    **deslizarse/agacharse** (le da uso al agachado). Aparición escalonada por
+    puntuación (`canFly` >200, `canHard` >350).
+
 ### Ideas pendientes / posibles mejoras
+- **Grieta en el suelo** (saltar un vacío; caer = perder) — anotada para después.
 - Tipografía más "de juego" en los títulos.
-- Pájaros más rápidos que el suelo / patrones de vuelo (subir-bajar).
 - Más tipos de power-up (doble salto, multiplicador x2) o elegirlos en vez de azar.
 - Tabla de récords local (top 5) y logros simples.
 - Sprite propio para los pájaros (otra manualidad).
