@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Pickle the Penguin 🐧</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-wrapper">
+    <canvas id="game" width="800" height="300"></canvas>
+    <div id="hud">
+      <span id="score">0</span>
+      <span id="best">HI 0</span>
+    </div>
+    <div id="overlay" class="show">
+      <img id="overlay-peng" src="assets/penguin_run1.png" alt="Pickle the Penguin" />
+      <h1 id="overlay-title">Pickle the Penguin</h1>
+      <p id="overlay-msg">Tap or press <b>Space</b> / <b>↑</b> to start</p>
+      <p class="hint">Jump to dodge. Press ↓ to duck. Grab the fish for bonus points.</p>
+    </div>
+  </div>
+  <p class="footer">Space / ↑ = jump &nbsp;·&nbsp; ↓ = duck &nbsp;·&nbsp; P = pause &nbsp;·&nbsp; on mobile: tap the screen</p>
+  <script src="game.js"></script>
+</body>
+</html>
