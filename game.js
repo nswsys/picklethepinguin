@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v5";
+const VERSION = "v6";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas en SPRITES de abajo. Si una ruta está vacía
@@ -42,6 +42,9 @@ const overlay = document.getElementById("overlay");
 const overlayMsg = document.getElementById("overlay-msg");
 const nameForm = document.getElementById("name-form");
 const nameInput = document.getElementById("name-input");
+const nameSkip = document.getElementById("name-skip");
+const btnUp = document.getElementById("btn-up");
+const btnDown = document.getElementById("btn-down");
 const leaderboardEl = document.getElementById("leaderboard");
 
 // ---------------------------------------------------------------------------
@@ -139,6 +142,17 @@ function submitName() {
   overlayMsg.innerHTML = `Saved! Score: <b>${Math.floor(score)}</b> — tap or press Space to retry`;
 }
 nameForm.addEventListener("submit", (e) => { e.preventDefault(); submitName(); });
+
+// saltar la entrada de nombre: cierra el formulario sin guardar y deja reintentar
+function skipName() {
+  if (!enteringName) return;
+  enteringName = false;
+  nameForm.classList.add("hidden");
+  nameInput.blur();
+  renderLeaderboard();
+  overlayMsg.innerHTML = `Game Over — Score: <b>${Math.floor(score)}</b> — tap or press Space to retry`;
+}
+nameSkip.addEventListener("click", skipName);
 
 let speed = 6;           // velocidad de scroll (px por frame a 60fps)
 const BASE_SPEED = 6;
@@ -624,7 +638,10 @@ function togglePause() {
 }
 
 addEventListener("keydown", (e) => {
-  if (enteringName) return;   // deja escribir el nombre (Enter lo envía el form)
+  if (enteringName) {         // deja escribir el nombre (Enter lo envía el form)
+    if (e.code === "Escape") { e.preventDefault(); skipName(); }  // Esc = saltar
+    return;
+  }
   if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); swimHold = true; jump(); }
   if (e.code === "ArrowDown") { e.preventDefault(); swimDown = true; setDuck(true); }
   if (e.code === "KeyP") { e.preventDefault(); togglePause(); }
@@ -659,6 +676,23 @@ canvas.addEventListener("touchstart", pointerDown, { passive: false });
 canvas.addEventListener("touchend", pointerUp);
 canvas.addEventListener("mousedown", pointerDown);
 addEventListener("mouseup", pointerUp);
+
+// Botones táctiles en pantalla (móvil). Mapean a la misma lógica que el teclado:
+// ↑ = saltar / nadar arriba (también arranca la partida), ⌄ = agacharse / nadar abajo.
+function holdUp(on)   { swimHold = on; if (on) jump(); }
+function holdDown(on) { swimDown = on; setDuck(on); }
+function bindHoldButton(el, fn) {
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    fn(true);
+  });
+  const release = (e) => { e.preventDefault(); fn(false); };
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+}
+bindHoldButton(btnUp, holdUp);
+bindHoldButton(btnDown, holdDown);
 
 // ---------------------------------------------------------------------------
 //  Ciclo de vida

@@ -107,7 +107,7 @@ canvas {
   background: #0b1e2d;
   color: #fff;
 }
-#name-save {
+#name-save, #name-skip {
   font: inherit;
   font-weight: 700;
   padding: 6px 14px;
@@ -116,6 +116,10 @@ canvas {
   background: #5fd0ff;
   color: #0b1e2d;
   cursor: pointer;
+}
+#name-skip {
+  background: rgba(255, 255, 255, 0.15);
+  color: #e8f4ff;
 }
 #leaderboard {
   list-style: none;
@@ -188,4 +192,48 @@ canvas {
   /* libera alto en el overlay para que quepan tabla + formulario */
   #overlay-peng { display: none; }
   #overlay { gap: 5px; padding: 8px; }
+}
+
+/* ---- Controles táctiles en pantalla (solo móvil) ---- */
+#touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;        /* solo los botones capturan el toque */
+  z-index: 5;
+}
+.touch-btn {
+  position: absolute;
+  width: clamp(54px, 13vw, 92px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: none;          /* sin scroll/gestos al pulsar */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.08s;
+}
+.touch-btn:active { background: rgba(255, 255, 255, 0.38); }
+/* chevron dibujado con bordes (sin depender de glyphs de fuente) */
+.touch-btn .chev {
+  display: block;
+  width: 34%;
+  aspect-ratio: 1;
+  border: solid rgba(255, 255, 255, 0.92);
+  border-width: 0 clamp(4px, 1.2vw, 7px) clamp(4px, 1.2vw, 7px) 0;
+}
+#btn-up   { right: clamp(10px, 3vw, 30px); top: 50%; transform: translateY(-50%); }
+#btn-down { left: clamp(10px, 3vw, 30px); bottom: clamp(10px, 3vw, 26px); }
+#btn-up   .chev { transform: translateY(22%) rotate(-135deg); }   /* apunta arriba */
+#btn-down .chev { transform: translateY(-22%) rotate(45deg); }    /* apunta abajo  */
+
+/* en escritorio (puntero fino con hover) mandan el teclado: ocultar */
+@media (hover: hover) and (pointer: fine) {
+  #touch-controls { display: none; }
 }

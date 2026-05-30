@@ -31,9 +31,15 @@
       <form id="name-form" class="hidden" autocomplete="off">
         <input id="name-input" type="text" maxlength="10" placeholder="YOUR NAME" autocomplete="off" />
         <button id="name-save" type="submit">Save</button>
+        <button id="name-skip" type="button">Skip</button>
       </form>
       <ol id="leaderboard" class="hidden"></ol>
       <p class="hint">Jump over ice &amp; birds, duck (↓) under low ones and ice arches. Eat 5 fish for a random power-up!</p>
+    </div>
+    <!-- Controles táctiles (solo en móvil): chevron derecha = saltar, izquierda-abajo = slide -->
+    <div id="touch-controls">
+      <button id="btn-down" class="touch-btn" type="button" aria-label="Slide"><span class="chev"></span></button>
+      <button id="btn-up" class="touch-btn" type="button" aria-label="Jump"><span class="chev"></span></button>
     </div>
   </div>
   <p class="footer">Space / ↑ = jump &nbsp;·&nbsp; ↓ = duck &nbsp;·&nbsp; P = pause &nbsp;·&nbsp; on mobile: tap the screen</p>
