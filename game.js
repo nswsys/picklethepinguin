@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v4";
+const VERSION = "v5";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas en SPRITES de abajo. Si una ruta está vacía
@@ -188,6 +188,25 @@ let shake = 0;           // intensidad restante del "screen shake"
 let squash = 0;          // squash & stretch (-1 estirado .. 1 aplastado)
 let paused = false;
 
+// --- Modo submarino ---------------------------------------------------------
+// Paralelo a `state`: dentro de PLAYING el juego puede estar corriendo por la
+// superficie (RUN) o bajo el hielo (SWIM), con dos transiciones cortas.
+const Mode = { RUN: "run", DIVE: "dive", SWIM: "swim", RISE: "rise" };
+let mode = Mode.RUN;
+let modeT = 0;             // fotogramas restantes de la transición (dive/rise)
+let swimT = 0;             // fotogramas restantes bajo el agua
+let swimSpawnT = 0;        // cuenta atrás para el próximo monstruo marino
+let swimCoinT = 0;         // cuenta atrás para el próximo pez submarino
+let swimHold = false;      // true mientras se mantiene pulsado para nadar arriba
+let swimDown = false;      // true mientras se mantiene pulsado para nadar abajo
+const ICE_UNDER = 46;      // borde inferior del techo de hielo (escena submarina)
+const SEA_BOTTOM = H - 16; // fondo marino
+const DIVE_DUR = 34;       // frames de la zambullida
+const RISE_DUR = 36;       // frames del ascenso a la superficie
+const SWIM_DUR = 540;      // frames bajo el agua (~9 s)
+const SWIM_SPEED = 3.4;    // px/frame de nado vertical (control directo up/down)
+const bubbles = [];        // burbujas de fondo bajo el agua
+
 // Power-ups: al comer FISH_PER_POWERUP peces se activa uno AL AZAR.
 let fishEaten = 0;       // peces comidos hacia el próximo power-up
 let power = null;        // power-up activo: "shield" | "magnet" | "fly" | "slow"
@@ -237,15 +256,31 @@ function makeOverhang() {
   return { type: "overhang", x: W + 20, top: -10, bottom: GROUND_Y - 44, w: 42 };
 }
 
+// Charco de agua: hueco ancho en el hielo. Si lo pisas (no lo saltas) caes
+// dentro y empieza la fase submarina. NUNCA mata.
+function makePuddle() {
+  return { type: "puddle", x: W + 20, y: GROUND_Y, w: 70 + Math.random() * 46, h: 12, ripple: 0 };
+}
+
+// Monstruo marino (fase submarina): entra por la derecha a una altura y se
+// mueve en onda vertical. Chocar SÍ es game over.
+function makeMonster() {
+  const amp = 18 + Math.random() * 30;
+  const baseY = ICE_UNDER + 50 + Math.random() * (SEA_BOTTOM - ICE_UNDER - 110);
+  return { type: "seamonster", x: W + 30, baseY, y: baseY, w: 66, h: 40, amp, wig: Math.random() * Math.PI * 2 };
+}
+
 function spawnObstacle() {
   const canFly = score > 200;     // aparecen aves
   const canHard = score > 350;    // aparecen picada, bola de nieve y arco
+  const canDive = score > 150;    // aparecen charcos (fase submarina)
   const r = Math.random();
   let o;
-  if (canHard && r < 0.16) o = makeOverhang();
-  else if (canHard && r < 0.32) o = makeSnowball();
-  else if (canHard && r < 0.44) o = makeBird("swoop");
-  else if (canFly && r < 0.64) o = makeBird(Math.random() < 0.5 ? "low" : "mid");
+  if (canDive && r < 0.12) o = makePuddle();
+  else if (canHard && r < 0.27) o = makeOverhang();
+  else if (canHard && r < 0.41) o = makeSnowball();
+  else if (canHard && r < 0.52) o = makeBird("swoop");
+  else if (canFly && r < 0.70) o = makeBird(Math.random() < 0.5 ? "low" : "mid");
   else o = makeIce();
   obstacles.push(o);
 }
@@ -262,6 +297,16 @@ function spawnCoin() {
   coins.push({
     x: W + 20,
     y: heights[Math.floor(Math.random() * heights.length)],
+    r: 11,
+    bob: Math.random() * Math.PI * 2,
+  });
+}
+
+// pez submarino: bonus durante la fase de nado, en cualquier altura del agua
+function spawnSwimCoin() {
+  coins.push({
+    x: W + 20,
+    y: ICE_UNDER + 30 + Math.random() * (SEA_BOTTOM - ICE_UNDER - 50),
     r: 11,
     bob: Math.random() * Math.PI * 2,
   });
@@ -321,6 +366,24 @@ function initStars() {
       x: Math.random() * W, y: Math.random() * GROUND_Y * 0.7,
       r: 0.4 + Math.random() * 1.2, ph: Math.random() * Math.PI * 2,
     });
+  }
+}
+function initBubbles() {
+  if (bubbles.length) return;
+  for (let i = 0; i < 30; i++) {
+    bubbles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: 1 + Math.random() * 3,
+      sp: 0.4 + Math.random() * 0.9,
+      drift: Math.random() * Math.PI * 2,
+    });
+  }
+}
+function updateBubbles() {
+  for (const b of bubbles) {
+    b.y -= b.sp; b.drift += 0.03;
+    b.x += Math.sin(b.drift) * 0.4;
+    if (b.y < -4) { b.y = H + 4; b.x = Math.random() * W; }
   }
 }
 
@@ -427,6 +490,35 @@ function playChomp() {
   o.start(t); o.stop(t + 0.11);
 }
 
+// "plop" de agua al caer al charco (ruido filtrado grave + breve burbujeo)
+function playSplash() {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime;
+  const dur = 0.3;
+  const buf = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.5);
+  }
+  const noise = a.createBufferSource(); noise.buffer = buf;
+  const bp = a.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(900, t);
+  bp.frequency.exponentialRampToValueAtTime(300, t + 0.25);
+  const ng = a.createGain(); ng.gain.setValueAtTime(0.4, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  noise.connect(bp).connect(ng).connect(a.destination);
+  noise.start(t); noise.stop(t + dur);
+
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(500, t);
+  o.frequency.exponentialRampToValueAtTime(180, t + 0.18);
+  og.gain.setValueAtTime(0.18, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  o.connect(og).connect(a.destination);
+  o.start(t); o.stop(t + 0.22);
+}
+
 // arpegio brillante ascendente al activar un power-up
 function playPowerUp() {
   const a = audio(); if (!a) return;
@@ -504,6 +596,8 @@ function jump() {
   if (enteringName) return;                  // no reiniciar mientras se teclea
   if (paused) { paused = false; return; }   // un toque también reanuda
   if (state === State.READY || state === State.OVER) { start(); return; }
+  if (mode === Mode.SWIM) { swimHold = true; return; }  // bajo el agua: nadar arriba
+  if (mode !== Mode.RUN) return;                          // ignorar durante transiciones
   if (power === "fly") {       // durante el vuelo: aletear en el aire
     penguin.vy = FLY_FLAP;
     penguin.onGround = false;
@@ -531,12 +625,13 @@ function togglePause() {
 
 addEventListener("keydown", (e) => {
   if (enteringName) return;   // deja escribir el nombre (Enter lo envía el form)
-  if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); jump(); }
-  if (e.code === "ArrowDown") { e.preventDefault(); setDuck(true); }
+  if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); swimHold = true; jump(); }
+  if (e.code === "ArrowDown") { e.preventDefault(); swimDown = true; setDuck(true); }
   if (e.code === "KeyP") { e.preventDefault(); togglePause(); }
 });
 addEventListener("keyup", (e) => {
-  if (e.code === "ArrowDown") setDuck(false);
+  if (e.code === "Space" || e.code === "ArrowUp") swimHold = false;
+  if (e.code === "ArrowDown") { swimDown = false; setDuck(false); }
 });
 // pausa automática al cambiar de pestaña / minimizar
 document.addEventListener("visibilitychange", () => {
@@ -549,10 +644,16 @@ function pointerDown(e) {
   const rect = canvas.getBoundingClientRect();
   const pt = e.touches ? e.touches[0] : e;
   const yRel = (pt.clientY - rect.top) / rect.height;
-  if (yRel > 0.6 && state === State.PLAYING) setDuck(true);
-  else jump();
+  // bajo el agua: tocar arriba = nadar arriba, tocar abajo = nadar abajo
+  if (state === State.PLAYING && mode === Mode.SWIM) {
+    if (yRel > 0.5) { swimDown = true; swimHold = false; }
+    else { swimHold = true; swimDown = false; }
+    return;
+  }
+  if (yRel > 0.6 && state === State.PLAYING && mode === Mode.RUN) setDuck(true);
+  else { swimHold = true; jump(); }
 }
-function pointerUp() { setDuck(false); }
+function pointerUp() { setDuck(false); swimHold = false; swimDown = false; }
 
 canvas.addEventListener("touchstart", pointerDown, { passive: false });
 canvas.addEventListener("touchend", pointerUp);
@@ -585,6 +686,11 @@ function start() {
   powerT = 0;
   timeScale = 1;
   powerBannerT = 0;
+  mode = Mode.RUN;
+  modeT = 0;
+  swimT = 0;
+  swimHold = false;
+  swimDown = false;
   penguin.y = GROUND_Y;
   penguin.vy = 0;
   penguin.onGround = true;
@@ -631,10 +737,55 @@ function update() {
   frame++;
   if (state !== State.PLAYING || paused) return;
 
-  // power-up activo: cuenta atrás y cámara lenta
+  // power-up activo: cuenta atrás y cámara lenta (aplica en todos los modos)
   timeScale = power === "slow" ? 0.5 : 1;
   if (power) { if (--powerT <= 0) { power = null; timeScale = 1; } }
 
+  if (mode === Mode.RUN) updateRun();
+  else if (mode === Mode.DIVE) updateDive();
+  else if (mode === Mode.SWIM) updateSwim();
+  else if (mode === Mode.RISE) updateRise();
+}
+
+// velocidad y puntuación: avanzan tanto corriendo como nadando
+function advanceScore() {
+  score += 0.15 * (speed / BASE_SPEED);
+  speed = Math.min(MAX_SPEED, BASE_SPEED + score / 120);
+  scoreEl.textContent = String(Math.floor(score)).padStart(4, "0");
+  const milestone = Math.floor(score / 100);
+  if (milestone > lastMilestone) { lastMilestone = milestone; playPoint(); }
+}
+
+// peces coleccionables: mover, imán y recogida (común a superficie y agua)
+function updateCoins(box) {
+  const mouth = penguinMouth();
+  for (const c of coins) {
+    if (power === "magnet") {
+      const dx = mouth.x - c.x, dy = mouth.y - c.y, d = Math.hypot(dx, dy) || 1;
+      c.x += (dx / d) * 8;
+      c.y += (dy / d) * 8;
+    } else {
+      c.x -= speed * timeScale;
+    }
+    c.bob += 0.12;
+    const cb = { x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 };
+    if (hit(box, cb)) {
+      c.collected = true;
+      score += 25;
+      playChomp();
+      spawnParticles(c.x, c.y, 8,
+        { color: "#ffd34d", speed: 2.4, life: 24, gravity: 0.05, size: 2.4 });
+      if (!power && ++fishEaten >= FISH_PER_POWERUP) {
+        fishEaten = 0;
+        activatePower();
+      }
+    }
+  }
+  coins = coins.filter((c) => !c.collected && c.x + c.r > -10);
+}
+
+// --- Modo RUN: el endless runner de siempre --------------------------------
+function updateRun() {
   // física del pingüino (gravedad más suave mientras vuela)
   penguin.vy += power === "fly" ? 0.34 : GRAVITY;
   penguin.y += penguin.vy;
@@ -654,14 +805,7 @@ function update() {
   }
   squash *= 0.82;   // vuelve poco a poco a su forma normal
 
-  // velocidad y puntuación
-  score += 0.15 * (speed / BASE_SPEED);
-  speed = Math.min(MAX_SPEED, BASE_SPEED + score / 120);
-  scoreEl.textContent = String(Math.floor(score)).padStart(4, "0");
-
-  // sonidito cada 100 puntos
-  const milestone = Math.floor(score / 100);
-  if (milestone > lastMilestone) { lastMilestone = milestone; playPoint(); }
+  advanceScore();
 
   // ¡superaste tu récord! -> recompensa de peces (una vez por partida)
   if (!celebrated && prevBest > 0 && score > prevBest) spawnFishReward();
@@ -685,6 +829,13 @@ function update() {
       if (o.behavior === "swoop") o.y = o.baseY + Math.sin((W - o.x) * 0.018) * 52;
     }
     if (o.type === "snowball") o.roll += sp * 0.08;
+    if (o.type === "puddle") {
+      o.ripple += 0.15;
+      // caes si los pies pisan el agua; saltando por encima pasas sin problema
+      const cx = penguin.x + penguinDims().w * 0.5;
+      if (penguin.onGround && cx > o.x && cx < o.x + o.w) { startDive(); return; }
+      continue;                       // el charco nunca te mata
+    }
     if (hit(box, obstacleBox(o))) {
       if (power === "shield") {
         // el escudo rompe el obstáculo en vez de matarte
@@ -704,32 +855,109 @@ function update() {
   // peces coleccionables: aparecen de vez en cuando y suman puntos
   coinTimer -= timeScale;
   if (coinTimer <= 0) { spawnCoin(); coinTimer = 130 + Math.random() * 170; }
-  const mouth = penguinMouth();
-  for (const c of coins) {
-    if (power === "magnet") {
-      // el imán atrae todos los peces hacia el pingüino
-      const dx = mouth.x - c.x, dy = mouth.y - c.y, d = Math.hypot(dx, dy) || 1;
-      c.x += (dx / d) * 8;
-      c.y += (dy / d) * 8;
-    } else {
-      c.x -= speed * timeScale;
-    }
-    c.bob += 0.12;
-    const cb = { x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 };
-    if (hit(box, cb)) {
-      c.collected = true;
-      score += 25;
-      playChomp();
-      spawnParticles(c.x, c.y, 8,
-        { color: "#ffd34d", speed: 2.4, life: 24, gravity: 0.05, size: 2.4 });
-      // progreso hacia el próximo power-up (solo si no hay uno activo)
-      if (!power && ++fishEaten >= FISH_PER_POWERUP) {
-        fishEaten = 0;
-        activatePower();
+  updateCoins(box);
+}
+
+// --- Transición DIVE: el pingüino se hunde tras pisar el charco -------------
+function startDive() {
+  mode = Mode.DIVE;
+  modeT = DIVE_DUR;
+  obstacles = [];
+  coins = [];
+  shake = 8;
+  playSplash();
+  spawnParticles(penguin.x + penguinDims().w * 0.5, GROUND_Y, 22,
+    { color: "#bfe6f6", speed: 5, life: 30, gravity: 0.3, size: 3, lift: 3 });
+}
+function updateDive() {
+  modeT--;
+  penguin.ducking = false;
+  penguin.onGround = false;
+  penguin.y = Math.min(penguin.y + 5, SEA_BOTTOM);
+  if (modeT <= 0) startSwim();
+}
+
+// --- Modo SWIM: nado bajo el hielo, esquivando monstruos -------------------
+function startSwim() {
+  mode = Mode.SWIM;
+  swimT = SWIM_DUR;
+  penguin.ducking = true;        // pose de costado = estilo "nadando"
+  penguin.y = SEA_BOTTOM;
+  penguin.vy = 0;
+  obstacles = [];
+  coins = [];
+  swimSpawnT = 45;
+  swimCoinT = 60;
+  initBubbles();
+}
+function updateSwim() {
+  advanceScore();
+  swimT -= timeScale;
+
+  // control directo arriba/abajo (como el salto/agacharse del nivel normal):
+  // arriba sube, abajo baja, sin entrada se queda quieto.
+  const dir = (swimHold ? -1 : 0) + (swimDown ? 1 : 0);
+  penguin.vy = dir * SWIM_SPEED;
+  penguin.y += penguin.vy * timeScale;
+  const topLimit = ICE_UNDER + penguinDims().h;
+  if (penguin.y < topLimit) { penguin.y = topLimit; penguin.vy = 0; }
+  if (penguin.y > SEA_BOTTOM) { penguin.y = SEA_BOTTOM; penguin.vy = 0; }
+
+  // monstruos marinos
+  swimSpawnT -= timeScale;
+  if (swimSpawnT <= 0) { obstacles.push(makeMonster()); swimSpawnT = 70 + Math.random() * 70; }
+
+  // peces bonus
+  swimCoinT -= timeScale;
+  if (swimCoinT <= 0) { spawnSwimCoin(); swimCoinT = 90 + Math.random() * 120; }
+
+  const box = penguinBox();
+  for (const o of obstacles) {
+    o.x -= speed * timeScale;
+    if (o.type === "seamonster") { o.wig += 0.05 * timeScale; o.y = o.baseY + Math.sin(o.wig) * o.amp; }
+    if (hit(box, obstacleBox(o))) {
+      if (power === "shield") {
+        o.smashed = true;
+        shake = 6;
+        playCrash();
+        spawnParticles(o.x + o.w / 2, o.y, 12,
+          { color: "#9fe6c8", speed: 4, life: 26, gravity: 0.05, size: 2.6 });
+      } else {
+        gameOver();
       }
     }
   }
-  coins = coins.filter((c) => !c.collected && c.x + c.r > -10);
+  obstacles = obstacles.filter((o) => !o.smashed && o.x + o.w > -10);
+
+  updateCoins(box);
+
+  if (swimT <= 0) startRise();
+}
+
+// --- Transición RISE: el pingüino asciende y rompe la superficie ------------
+function startRise() {
+  mode = Mode.RISE;
+  modeT = RISE_DUR;
+  penguin.ducking = false;       // vuelve a la pose de pie para salir
+  obstacles = [];
+  coins = [];
+  playJump();
+  spawnParticles(penguin.x + penguinDims().w * 0.5, penguin.y, 16,
+    { color: "#d6f3ff", speed: 3, life: 30, gravity: -0.04, size: 2.6, lift: 4 });
+}
+function updateRise() {
+  advanceScore();
+  modeT--;
+  penguin.y += ((GROUND_Y - 80) - penguin.y) * 0.2;   // asciende hacia la superficie
+  if (modeT <= 0) {
+    mode = Mode.RUN;
+    penguin.onGround = false;
+    penguin.vy = -2;            // sale con un saltito y cae al suelo
+    obstacles = [];
+    spawnTimer = 50;
+    spawnParticles(penguin.x + penguinDims().w * 0.5, GROUND_Y, 18,
+      { color: "#bfe6f6", speed: 4, life: 26, gravity: 0.3, size: 3, lift: 3 });
+  }
 }
 
 function penguinBox() {
@@ -751,6 +979,10 @@ function obstacleBox(o) {
   if (o.type === "overhang") {
     // cuelga desde arriba; el hueco queda bajo o.bottom (hay que agacharse)
     return { x: o.x + pad, y: o.top, w: o.w - pad * 2, h: o.bottom - o.top };
+  }
+  if (o.type === "seamonster") {
+    // el monstruo tiene o.y como centro vertical
+    return { x: o.x + pad + 6, y: o.y - o.h / 2 + pad, w: o.w - pad * 2 - 8, h: o.h - pad * 2 };
   }
   return { x: o.x + pad, y: o.y - o.h + pad, w: o.w - pad * 2, h: o.h - pad * 2 };
 }
@@ -804,25 +1036,113 @@ function updateFishes() {
 // ---------------------------------------------------------------------------
 let groundOffset = 0;
 
+// Cuánta "agua" se ve ahora (0 superficie .. 1 sumergido), para el fundido
+// entre la escena de correr y la submarina.
+function waterFade() {
+  if (mode === Mode.SWIM) return 1;
+  if (mode === Mode.DIVE) return 1 - modeT / DIVE_DUR;
+  if (mode === Mode.RISE) return modeT / RISE_DUR;
+  return 0;
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
   ctx.save();
   if (shake > 0.5) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  const wf = waterFade();
+  // escena de superficie
   drawSky();
   drawBackground();
   drawGround();
+  // escena submarina superpuesta (con opacidad de transición)
+  if (wf > 0) {
+    ctx.save();
+    ctx.globalAlpha = wf;
+    drawUnderwater();
+    ctx.restore();
+  }
   for (const c of coins) drawFish(c.x, c.y + Math.sin(c.bob) * 3, c.r);
   for (const o of obstacles) drawObstacle(o);
   drawPenguin();
   drawParticles();
   for (const f of fishes) if (f.delay <= 0) drawFish(f.x, f.y, 11);
   ctx.restore();
-  drawSnow();          // nieve por encima de todo (sin sacudida)
+  if (wf < 1) { ctx.save(); ctx.globalAlpha = 1 - wf; drawSnow(); ctx.restore(); } // nieve solo fuera del agua
   drawPowerHud();
+  drawSwimHud();
   drawBanner();
   drawPowerBanner();
   drawVersion();
   if (paused) drawPauseScreen();
+}
+
+// Escena submarina: agua en degradado, techo de hielo, rayos de luz y burbujas
+function drawUnderwater() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#1c6a96");
+  g.addColorStop(1, "#06243a");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // rayos de luz que bajan desde el hielo
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = "#cdeeff";
+  for (let i = 0; i < 4; i++) {
+    const x = ((i * 230 - frame * 0.4) % (W + 200)) + (i % 2 ? 40 : 0);
+    ctx.beginPath();
+    ctx.moveTo(x, ICE_UNDER);
+    ctx.lineTo(x + 50, ICE_UNDER);
+    ctx.lineTo(x + 140, H);
+    ctx.lineTo(x - 40, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  drawBubbles();
+
+  // techo de hielo (parte de abajo dentada, vista desde el agua)
+  ctx.fillStyle = "#dff2fb";
+  ctx.fillRect(0, 0, W, ICE_UNDER - 8);
+  ctx.fillStyle = "#cfe8f5";
+  ctx.beginPath();
+  ctx.moveTo(0, ICE_UNDER - 8);
+  for (let x = 0; x <= W; x += 28) {
+    ctx.lineTo(x + 14, ICE_UNDER - 8 + (x % 56 === 0 ? 10 : 4));
+    ctx.lineTo(x + 28, ICE_UNDER - 8);
+  }
+  ctx.lineTo(W, 0); ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBubbles() {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 1;
+  for (const b of bubbles) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Barra de tiempo bajo el agua (avisa cuándo saldrás a la superficie)
+function drawSwimHud() {
+  if (mode !== Mode.SWIM) return;
+  const w = 130, x = W / 2 - w / 2, y = 16;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.font = "bold 10px system-ui, sans-serif";
+  ctx.fillStyle = "#eaffff";
+  ctx.fillText("SURFACE IN…", W / 2, y - 3);
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  roundRect(x, y, w, 6, 3); ctx.fill();
+  ctx.fillStyle = "#7dff9b";
+  roundRect(x, y, w * (swimT / SWIM_DUR), 6, 3); ctx.fill();
+  ctx.restore();
 }
 
 // Número de versión, abajo a la izquierda (legible en cielo claro u oscuro)
@@ -1052,6 +1372,10 @@ function drawObstacle(o) {
     drawSnowball(o);
   } else if (o.type === "overhang") {
     drawOverhang(o);
+  } else if (o.type === "puddle") {
+    drawPuddle(o);
+  } else if (o.type === "seamonster") {
+    drawMonster(o);
   } else {
     // témpano de hielo (triangulito)
     ctx.fillStyle = "#7fc7e8";
@@ -1067,15 +1391,78 @@ function drawObstacle(o) {
   }
 }
 
-// Bola de nieve con marcas de rodadura que giran
+// Charco de agua en el hielo: hueco oscuro con brillo y ondas
+function drawPuddle(o) {
+  const cx = o.x + o.w / 2, cy = GROUND_Y + 3, rx = o.w / 2;
+  ctx.save();
+  // hueco de agua
+  const g = ctx.createLinearGradient(0, cy - 9, 0, cy + 7);
+  g.addColorStop(0, "#9fdcff");
+  g.addColorStop(1, "#2f7fb0");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#6fb0d4"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, 9, 0, 0, Math.PI * 2); ctx.stroke();
+  // ondas / brillo
+  ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 1.5;
+  const k = 0.5 + 0.5 * Math.sin(o.ripple);
+  ctx.beginPath(); ctx.ellipse(cx - rx * 0.2, cy - 1, rx * 0.4 * k, 2.4 * k, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// Monstruo marino: cuerpo con cola, fauces abiertas y dientes (centro en o.y)
+function drawMonster(o) {
+  const w = o.w, h = o.h;
+  ctx.save();
+  ctx.translate(o.x + w / 2, o.y);
+  // cola con aletas (a la derecha)
+  ctx.fillStyle = "#2f8f78";
+  tri(w * 0.28, -h * 0.12, w * 0.6, -h * 0.42, w * 0.5, h * 0.05);
+  tri(w * 0.28, h * 0.12, w * 0.6, h * 0.42, w * 0.5, -h * 0.05);
+  // cuerpo
+  ctx.fillStyle = "#3aa68a";
+  ctx.strokeStyle = "#1f6f5c";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, w * 0.42, h * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // aleta dorsal
+  ctx.fillStyle = "#2f8f78";
+  tri(-w * 0.05, -h * 0.4, w * 0.12, -h * 0.62, w * 0.18, -h * 0.34);
+  // fauces abiertas (a la izquierda, hacia el pingüino)
+  ctx.fillStyle = "#16302b";
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.16, -h * 0.2);
+  ctx.lineTo(-w * 0.52, 0);
+  ctx.lineTo(-w * 0.16, h * 0.2);
+  ctx.closePath(); ctx.fill();
+  // dientes
+  ctx.fillStyle = "#fff";
+  for (let i = 0; i < 3; i++) {
+    const tx = -w * 0.2 - i * w * 0.1;
+    tri(tx, -h * 0.16, tx - 3, -h * 0.04, tx - 7, -h * 0.16);
+    tri(tx, h * 0.16, tx - 3, h * 0.04, tx - 7, h * 0.16);
+  }
+  // ojo
+  ctx.fillStyle = "#fff"; ellipse(w * 0.02, -h * 0.16, h * 0.13, h * 0.13);
+  ctx.fillStyle = "#111"; ellipse(w * 0.04, -h * 0.16, h * 0.06, h * 0.06);
+  ctx.restore();
+}
+
+// Bola de hielo azul con marcas de rodadura que giran (resalta sobre el cielo)
 function drawSnowball(o) {
   const cx = o.x + o.r, cy = o.y - o.r;
   ctx.save();
-  ctx.fillStyle = "#f2fbff";
-  ctx.strokeStyle = "#bcd8e6";
-  ctx.lineWidth = 2;
+  // relleno con degradado azul para dar volumen
+  const g = ctx.createRadialGradient(cx - o.r * 0.3, cy - o.r * 0.3, o.r * 0.2, cx, cy, o.r);
+  g.addColorStop(0, "#bfeaff");
+  g.addColorStop(1, "#3f9bd6");
+  ctx.fillStyle = g;
+  ctx.strokeStyle = "#1f6ea3";
+  ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(cx, cy, o.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = "rgba(140, 180, 200, 0.6)";
+  // marcas de rodadura que giran
+  ctx.strokeStyle = "rgba(31, 110, 163, 0.7)";
   ctx.lineWidth = 1.5;
   for (let i = 0; i < 3; i++) {
     const a = o.roll + i * (Math.PI * 2 / 3);
@@ -1083,6 +1470,9 @@ function drawSnowball(o) {
     ctx.arc(cx, cy, o.r * 0.55, a, a + 0.9);
     ctx.stroke();
   }
+  // brillo especular fijo (lectura clara contra fondos claros)
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ellipse(cx - o.r * 0.35, cy - o.r * 0.35, o.r * 0.22, o.r * 0.16);
   ctx.restore();
 }
 
@@ -1163,9 +1553,11 @@ function tri(x1, y1, x2, y2, x3, y3) {
 
 function drawPenguin() {
   const running = penguin.onGround && state === State.PLAYING;
-  const imgKey = penguin.onGround
-    ? (penguin.ducking ? "duck" : (frame % 18 < 9 ? "run1" : "run2"))
-    : "jump";
+  const imgKey = mode === Mode.SWIM
+    ? "duck"                                // pose de costado = nadando
+    : penguin.onGround
+      ? (penguin.ducking ? "duck" : (frame % 18 < 9 ? "run1" : "run2"))
+      : "jump";
 
   const img = images[imgKey] || images.run1 || images.run2;
   const { w, h } = penguinDims();
@@ -1193,9 +1585,13 @@ function drawPenguin() {
   // squash & stretch anclado en los pies (estira al saltar, aplasta al caer)
   const sx = 1 + squash * 0.16;
   const sy = 1 - squash * 0.22;
+  // bajo el agua se inclina según suba o baje
+  const swimming = mode === Mode.SWIM || mode === Mode.DIVE || mode === Mode.RISE;
+  const tilt = swimming ? Math.max(-0.5, Math.min(0.5, penguin.vy * 0.07)) : 0;
   ctx.save();
   ctx.translate(dx + w / 2, penguin.y);
   ctx.scale(sx, sy);
+  if (tilt) ctx.rotate(tilt);
   ctx.translate(-(dx + w / 2), -penguin.y);
   if (img) {
     ctx.drawImage(img, dx, dy, w, h);
@@ -1269,6 +1665,7 @@ function loop(now) {
   while (acc >= STEP) { update(); acc -= STEP; }
   if (!paused) {
     updateSnow();
+    if (waterFade() > 0) updateBubbles();
     updateParticles();
     shake = shake > 0.5 ? shake * 0.86 : 0;
   }
@@ -1283,6 +1680,7 @@ loadImages(() => {
   if (images.duck) aspect.duck = images.duck.width / images.duck.height;
   initSnow();
   initStars();
+  initBubbles();
   renderLeaderboard();      // muestra el top 5 en la pantalla de inicio
   overlay.classList.add("show");
   requestAnimationFrame(loop);
