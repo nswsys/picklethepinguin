@@ -203,11 +203,11 @@ canvas {
 }
 .touch-btn {
   position: absolute;
-  width: clamp(54px, 13vw, 92px);
+  width: clamp(46px, 11vw, 78px);
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
@@ -228,8 +228,11 @@ canvas {
   border: solid rgba(255, 255, 255, 0.92);
   border-width: 0 clamp(4px, 1.2vw, 7px) clamp(4px, 1.2vw, 7px) 0;
 }
-#btn-up   { right: clamp(10px, 3vw, 30px); top: 50%; transform: translateY(-50%); }
-#btn-down { left: clamp(10px, 3vw, 30px); bottom: clamp(10px, 3vw, 26px); }
+/* saltar: arriba-derecha (tercio superior, cielo despejado) */
+#btn-up   { right: clamp(10px, 3vw, 30px); top: 38%; transform: translateY(-50%); }
+/* slide: más pequeño y pegado a la esquina, dentro del ~9% libre a la izquierda
+   del pingüino para no taparlo (solo roza el suelo) */
+#btn-down { left: clamp(6px, 2vw, 18px); bottom: clamp(8px, 2.5vw, 20px); width: clamp(42px, 9vw, 60px); }
 #btn-up   .chev { transform: translateY(22%) rotate(-135deg); }   /* apunta arriba */
 #btn-down .chev { transform: translateY(-22%) rotate(45deg); }    /* apunta abajo  */
 
