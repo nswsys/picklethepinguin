@@ -25,8 +25,18 @@
       <span id="best">HI 0</span>
     </div>
     <div id="overlay" class="show">
-      <img id="overlay-peng" src="assets/penguin_run1.png" alt="Pickle the Penguin" />
+      <img id="overlay-peng" src="assets/penguin_jump.png" alt="Pickle the Penguin" />
       <h1 id="overlay-title">Pickle the Penguin</h1>
+      <div id="char-select" aria-label="Choose your penguin">
+        <button class="char-btn" data-char="pickle" type="button">
+          <img src="assets/penguin_run2.png" alt="" />
+          <span>Pickle</span>
+        </button>
+        <button class="char-btn" data-char="zynx" type="button">
+          <img src="assets/zynx_run2.png" alt="" />
+          <span>Zynx</span>
+        </button>
+      </div>
       <p id="overlay-msg">Tap or press <b>Space</b> / <b>↑</b> to start</p>
       <form id="name-form" class="hidden" autocomplete="off">
         <input id="name-input" type="text" maxlength="10" placeholder="YOUR NAME" autocomplete="off" />
