@@ -215,8 +215,10 @@ canvas {
   50% { transform: rotate(78deg); }
 }
 
-/* En teléfonos en vertical: pide girar y oculta el juego (se ve muy pequeño) */
-@media (orientation: portrait) and (max-width: 640px) {
+/* Dispositivos táctiles (teléfonos y tablets) en vertical: pide girar y oculta
+   el juego, que es apaisado (8/3) y se vería como una franja. `pointer: coarse`
+   excluye el escritorio (puntero fino), donde sí dejamos jugar en ventana alta. */
+@media (orientation: portrait) and (pointer: coarse) {
   #rotate-hint { display: flex; }
   #game-wrapper, .footer { display: none; }
 }

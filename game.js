@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v10";
+const VERSION = "v11";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas de cada personaje en CHARACTERS. Si una ruta
