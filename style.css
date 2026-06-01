@@ -92,6 +92,41 @@ canvas {
 #overlay p { font-size: clamp(13px, 2.6vw, 18px); opacity: 0.95; }
 #overlay .hint { opacity: 0.7; font-size: clamp(11px, 2.2vw, 15px); }
 
+/* ---- Selección de personaje (pantalla de inicio) ---- */
+#char-select {
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;          /* el overlay deja pasar el toque; los botones no */
+}
+.char-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #e8f4ff;
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(11px, 2.2vw, 14px);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.char-btn img {
+  width: clamp(40px, 9vw, 64px);
+  height: clamp(40px, 9vw, 64px);
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;          /* el clic siempre cae en el botón */
+}
+.char-btn.active {
+  border-color: #5fd0ff;
+  background: rgba(95, 208, 255, 0.18);
+  transform: translateY(-2px);
+}
+
 /* ---- Tabla de récords + entrada de nombre ---- */
 #name-form { display: flex; gap: 8px; pointer-events: auto; }
 #name-form.hidden, #leaderboard.hidden { display: none; }
@@ -192,6 +227,8 @@ canvas {
   /* libera alto en el overlay para que quepan tabla + formulario */
   #overlay-peng { display: none; }
   #overlay { gap: 5px; padding: 8px; }
+  .char-btn { flex-direction: row; padding: 4px 8px; }
+  .char-btn img { width: 28px; height: 28px; }
 }
 
 /* ---- Controles táctiles en pantalla (solo móvil) ---- */

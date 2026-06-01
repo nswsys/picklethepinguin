@@ -4,21 +4,49 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v7";
+const VERSION = "v9";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
-//  /assets y rellena las rutas en SPRITES de abajo. Si una ruta está vacía
-//  o la imagen no carga, se dibuja un pingüino placeholder automáticamente.
+//  /assets y rellena las rutas de cada personaje en CHARACTERS. Si una ruta
+//  está vacía o la imagen no carga, se dibuja un pingüino placeholder.
+//
+//  Para AÑADIR un personaje: agrega una entrada a CHARACTERS con sus 4 poses
+//  (run1/run2/jump/duck) y un botón en index.html con data-char="<id>".
 // ===========================================================================
 
-const SPRITES = {
-  run1: "assets/penguin_run1.png",   // alas extendidas
-  run2: "assets/penguin_run2.png",   // alas abajo (alterna -> aleteo)
-  jump: "assets/penguin_jump.png",   // alas arriba (salto)
-  duck: "assets/penguin_duck.png",   // de costado (agachado)
+const CHARACTERS = {
+  pickle: {
+    name: "Pickle",
+    scale: 1,                          // tamaño de referencia
+    sprites: {
+      run1: "assets/penguin_run1.png",   // alas extendidas
+      run2: "assets/penguin_run2.png",   // alas abajo (alterna -> aleteo)
+      jump: "assets/penguin_jump.png",   // alas arriba (salto)
+      duck: "assets/penguin_duck.png",   // de costado (agachado)
+    },
+  },
+  zynx: {
+    name: "Zynx",
+    scale: 0.9,                        // zynx es más redondo/ancho; lo bajamos para igualar a Pickle
+    sprites: {
+      run1: "assets/zynx_run1.png",
+      run2: "assets/zynx_run2.png",
+      jump: "assets/zynx_jump.png",
+      duck: "assets/zynx_duck.png",
+    },
+  },
+};
+
+// Sprites compartidos por todos los personajes (no dependen de la elección).
+const SHARED_SPRITES = {
   bird1: "",   // (opcional) pájaro, ala arriba — si está vacío se dibuja
   bird2: "",   // (opcional) pájaro, ala abajo
 };
+
+// Personaje activo (persiste entre partidas). Se valida contra CHARACTERS.
+const CHAR_KEY = "pickle_char";
+let selectedChar = localStorage.getItem(CHAR_KEY) || "pickle";
+if (!CHARACTERS[selectedChar]) selectedChar = "pickle";
 
 // ---------------------------------------------------------------------------
 //  Setup del canvas
@@ -50,18 +78,77 @@ const leaderboardEl = document.getElementById("leaderboard");
 // ---------------------------------------------------------------------------
 //  Carga de imágenes (con fallback)
 // ---------------------------------------------------------------------------
+//  `images` = sprites EN USO (poses del personaje activo + compartidos); el
+//  resto del juego lee de aquí (images.run1, images.duck, images.bird1, ...).
+//  `imagesByChar` guarda las poses ya cargadas de cada personaje.
 const images = {};
+const imagesByChar = {};
 
 function loadImages(done) {
-  const entries = Object.entries(SPRITES).filter(([, src]) => src);
-  if (entries.length === 0) { done(); return; }
-  let pending = entries.length;
-  for (const [key, src] of entries) {
+  const tasks = [];   // [charId|null, key, src]  (charId null = compartido)
+  for (const [key, src] of Object.entries(SHARED_SPRITES)) {
+    if (src) tasks.push([null, key, src]);
+  }
+  for (const [cid, cfg] of Object.entries(CHARACTERS)) {
+    imagesByChar[cid] = {};
+    for (const [key, src] of Object.entries(cfg.sprites)) {
+      if (src) tasks.push([cid, key, src]);
+    }
+  }
+  if (tasks.length === 0) { done(); return; }
+  let pending = tasks.length;
+  for (const [cid, key, src] of tasks) {
     const img = new Image();
-    img.onload = () => { images[key] = img; if (--pending === 0) done(); };
+    const target = cid ? imagesByChar[cid] : images;
+    img.onload = () => { target[key] = img; if (--pending === 0) done(); };
     img.onerror = () => { if (--pending === 0) done(); };
     img.src = src;
   }
+}
+
+// Activa un personaje: reapunta los sprites en uso y recalcula su aspecto.
+function selectCharacter(id) {
+  if (!CHARACTERS[id]) id = "pickle";
+  selectedChar = id;
+  try { localStorage.setItem(CHAR_KEY, id); } catch (e) {}
+  const set = imagesByChar[id] || {};
+  for (const key of ["run1", "run2", "jump", "duck"]) {
+    if (set[key]) images[key] = set[key]; else delete images[key];
+  }
+  // ajusta el aspecto (w/h) al de los sprites reales para no deformarlos
+  const standImg = images.run1 || images.run2 || images.jump;
+  aspect.stand = standImg ? standImg.width / standImg.height : 0.85;
+  aspect.duck = images.duck ? images.duck.width / images.duck.height : 1.19;
+  // escala propia del personaje (para igualar tamaños entre pingüinos distintos)
+  charScale = CHARACTERS[id].scale || 1;
+  updateCharUI();
+}
+
+// Botones de selección de personaje en la pantalla de inicio (overlay).
+const charButtons = Array.from(document.querySelectorAll(".char-btn"));
+
+// Resalta el botón activo y refresca la imagen grande del overlay.
+function updateCharUI() {
+  for (const btn of charButtons) {
+    btn.classList.toggle("active", btn.dataset.char === selectedChar);
+  }
+  const peng = document.getElementById("overlay-peng");
+  if (peng) peng.src = overlayPengSrc();
+}
+
+// Imagen del personaje activo para el overlay (jump = pose más "expresiva").
+function overlayPengSrc() {
+  const s = (CHARACTERS[selectedChar] || CHARACTERS.pickle).sprites;
+  return s.jump || s.run1 || "assets/penguin_jump.png";
+}
+
+for (const btn of charButtons) {
+  // pointerdown + stopPropagation: elegir personaje sin disparar "tap = start"
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectCharacter(btn.dataset.char);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -172,13 +259,16 @@ const penguin = {
 // Aspecto (w/h) de cada sprite; se rellena al cargar las imágenes.
 // Valores por defecto pensados para el placeholder dibujado.
 const aspect = { stand: 0.85, duck: 1.19 };
+let charScale = 1;   // escala del personaje activo (iguala tamaños entre pingüinos)
 
 // Dimensiones actuales del pingüino (alto y ancho según pose y sprite real).
 function penguinDims() {
   if (penguin.ducking) {
-    return { h: penguin.duckH, w: penguin.duckH * aspect.duck };
+    const h = penguin.duckH * charScale;
+    return { h, w: h * aspect.duck };
   }
-  return { h: penguin.h, w: penguin.h * aspect.stand };
+  const h = penguin.h * charScale;
+  return { h, w: h * aspect.stand };
 }
 const GRAVITY = 0.7;
 const JUMP_V = -13;
@@ -199,6 +289,7 @@ let particles = [];      // polvo al aterrizar, splash al chocar, chispas
 const snow = [];         // copos de nieve de fondo (ambiente, siempre activos)
 const stars = [];        // estrellas para el bioma nocturno
 let shake = 0;           // intensidad restante del "screen shake"
+let quakeT = 0;          // frames de temblor SOSTENIDO (al romperse el hielo)
 let squash = 0;          // squash & stretch (-1 estirado .. 1 aplastado)
 let paused = false;
 
@@ -220,6 +311,22 @@ const RISE_DUR = 36;       // frames del ascenso a la superficie
 const SWIM_DUR = 540;      // frames bajo el agua (~9 s)
 const SWIM_SPEED = 3.4;    // px/frame de nado vertical (control directo up/down)
 const bubbles = [];        // burbujas de fondo bajo el agua
+
+// --- Zona de hielo roto (bioma "frozen") ------------------------------------
+// El suelo se rompe en témpanos a distintas alturas separados por agua. Hay que
+// brincar de uno a otro: caer al agua congela al pingüino y termina la partida.
+let frozen = false;        // ¿estamos en la zona de hielo roto?
+let floes = [];            // témpanos: { x, w, topY }
+let signs = [];            // letreros "FROZEN ZONE" (decorativos, no chocan)
+let warnT = 0;             // frames restantes del cartel de advertencia
+let freezing = false;      // animación de congelación en curso (cayó al agua)
+let freezeT = 0;           // frames restantes de la congelación
+let iceTrap = false;       // dibujar el bloque de hielo sobre el pingüino
+const FREEZE_DUR = 46;     // frames de la animación de congelación
+const FLOE_LEVELS = [GROUND_Y, GROUND_Y - 18, GROUND_Y - 34]; // alturas posibles (escalones suaves)
+// Scroll FIJO en la zona helada: el reto de saltar huecos debe ser justo a
+// cualquier puntuación (si usáramos `speed`, a score alto sería imposible).
+const FROZEN_SPEED = 7.5;
 
 // Power-ups: al comer FISH_PER_POWERUP peces se activa uno AL AZAR.
 let fishEaten = 0;       // peces comidos hacia el próximo power-up
@@ -701,6 +808,9 @@ function start() {
   audio();              // "despierta" el audio con el gesto del usuario
   state = State.PLAYING;
   score = 0;
+  // Atajo de pruebas: abre la página con #frozen (p.ej. index.html#frozen) para
+  // empezar pegado a la zona helada en vez de jugar hasta llegar a ella.
+  if (/frozen/i.test(location.hash + location.search)) score = BIOME_LEN * 3 - 6;
   speed = BASE_SPEED;
   obstacles = [];
   spawnTimer = 30;
@@ -715,6 +825,7 @@ function start() {
   shake = 0;
   squash = 0;
   paused = false;
+  quakeT = 0;
   fishEaten = 0;
   power = null;
   powerT = 0;
@@ -725,6 +836,13 @@ function start() {
   swimT = 0;
   swimHold = false;
   swimDown = false;
+  frozen = false;
+  floes = [];
+  signs = [];
+  warnT = 0;
+  freezing = false;
+  freezeT = 0;
+  iceTrap = false;
   penguin.y = GROUND_Y;
   penguin.vy = 0;
   penguin.onGround = true;
@@ -732,10 +850,10 @@ function start() {
   overlay.classList.remove("show");
 }
 
-function gameOver() {
+function gameOver(customWord) {
   state = State.OVER;
   playCrash();
-  const word = sayRandomWord();
+  const word = customWord || sayRandomWord();
 
   // sacudida + salpicadura de hielo en el punto del choque
   shake = 14;
@@ -745,7 +863,7 @@ function gameOver() {
 
   const finalScore = Math.floor(score);
   document.getElementById("overlay-title").textContent = word;
-  document.getElementById("overlay-peng").src = SPRITES.jump || "assets/penguin_jump.png";
+  document.getElementById("overlay-peng").src = overlayPengSrc();
 
   if (qualifies(finalScore)) {
     // ¡entra al top 5! -> pedir el nombre
@@ -775,7 +893,7 @@ function update() {
   timeScale = power === "slow" ? 0.5 : 1;
   if (power) { if (--powerT <= 0) { power = null; timeScale = 1; } }
 
-  if (mode === Mode.RUN) updateRun();
+  if (mode === Mode.RUN) { if (freezing) updateFreeze(); else updateRun(); }
   else if (mode === Mode.DIVE) updateDive();
   else if (mode === Mode.SWIM) updateSwim();
   else if (mode === Mode.RISE) updateRise();
@@ -818,21 +936,24 @@ function updateCoins(box) {
   coins = coins.filter((c) => !c.collected && c.x + c.r > -10);
 }
 
-// --- Modo RUN: el endless runner de siempre --------------------------------
+// --- Modo RUN: el endless runner (suelo continuo o zona de hielo roto) -------
 function updateRun() {
   // física del pingüino (gravedad más suave mientras vuela)
   penguin.vy += power === "fly" ? 0.34 : GRAVITY;
   penguin.y += penguin.vy;
   if (penguin.y < 50) { penguin.y = 50; if (penguin.vy < 0) penguin.vy = 0; } // techo
-  if (penguin.y >= GROUND_Y) {
-    if (!penguin.onGround) {
-      // acaba de aterrizar: polvo de nieve + aplastamiento
-      const lw = penguinDims().w;
-      spawnParticles(penguin.x + lw * 0.45, GROUND_Y, 9,
-        { color: "#e3f3fc", speed: 2.6, life: 20, angle: -Math.PI / 2,
-          spread: Math.PI, gravity: 0.22, size: 2.4 });
-      squash = 0.9;
-    }
+
+  // ¿entrar o salir del bioma de hielo roto?
+  const wantFrozen = terrainAt(biomeIndex()) === "floes";
+  if (wantFrozen && !frozen) enterFrozen();
+  else if (!wantFrozen && frozen && penguin.onGround && penguin.y >= GROUND_Y - 0.5) exitFrozen();
+
+  // aterrizaje: sobre témpanos (frozen) o sobre el suelo continuo
+  if (frozen) {
+    handleFloeLanding();
+    if (freezing) return;            // cayó al agua: arranca la congelación
+  } else if (penguin.y >= GROUND_Y) {
+    if (!penguin.onGround) landFX();
     penguin.y = GROUND_Y;
     penguin.vy = 0;
     penguin.onGround = true;
@@ -840,56 +961,182 @@ function updateRun() {
   squash *= 0.82;   // vuelve poco a poco a su forma normal
 
   advanceScore();
+  if (warnT > 0) warnT--;
 
   // ¡superaste tu récord! -> recompensa de peces (una vez por partida)
   if (!celebrated && prevBest > 0 && score > prevBest) spawnFishReward();
   updateFishes();
 
-  // spawn (el ritmo se ajusta a la cámara lenta para no amontonar obstáculos)
-  spawnTimer -= timeScale;
-  if (spawnTimer <= 0) {
-    spawnObstacle();
-    spawnTimer = nextSpawnGap();
-  }
-
-  // mover obstáculos + colisión
   const box = penguinBox();
-  for (const o of obstacles) {
-    const sp = (speed + (o.type === "snowball" ? o.extra : 0)) * timeScale;
-    o.x -= sp;
-    if (o.type === "bird") {
-      o.wing = (o.wing + 0.2) % (Math.PI * 2);
-      // la picada oscila en vertical conforme se acerca
-      if (o.behavior === "swoop") o.y = o.baseY + Math.sin((W - o.x) * 0.018) * 52;
+
+  if (frozen) {
+    // mover témpanos y letreros a velocidad fija (justa); el reto son los huecos
+    const sp = FROZEN_SPEED * timeScale;
+    for (const f of floes) f.x -= sp;
+    floes = floes.filter((f) => f.x + f.w > -40);
+    ensureFloes();
+    for (const s of signs) s.x -= sp;
+    signs = signs.filter((s) => s.x > -90);
+  } else {
+    // spawn (el ritmo se ajusta a la cámara lenta para no amontonar obstáculos)
+    spawnTimer -= timeScale;
+    if (spawnTimer <= 0) {
+      spawnObstacle();
+      spawnTimer = nextSpawnGap();
     }
-    if (o.type === "snowball") o.roll += sp * 0.08;
-    if (o.type === "puddle") {
-      o.ripple += 0.15;
-      // caes si los pies pisan el agua; saltando por encima pasas sin problema
-      const cx = penguin.x + penguinDims().w * 0.5;
-      if (penguin.onGround && cx > o.x && cx < o.x + o.w) { startDive(); return; }
-      continue;                       // el charco nunca te mata
-    }
-    if (hit(box, obstacleBox(o))) {
-      if (power === "shield") {
-        // el escudo rompe el obstáculo en vez de matarte
-        o.smashed = true;
-        shake = 6;
-        playCrash();
-        spawnParticles(o.x + o.w / 2, o.y - o.h / 2, 12,
-          { color: o.type === "bird" ? "#cdd6e6" : "#bfe6f6",
-            speed: 4, life: 26, gravity: 0.2, size: 2.6 });
-      } else {
-        gameOver();
+    // mover obstáculos + colisión
+    for (const o of obstacles) {
+      const sp = (speed + (o.type === "snowball" ? o.extra : 0)) * timeScale;
+      o.x -= sp;
+      if (o.type === "bird") {
+        o.wing = (o.wing + 0.2) % (Math.PI * 2);
+        // la picada oscila en vertical conforme se acerca
+        if (o.behavior === "swoop") o.y = o.baseY + Math.sin((W - o.x) * 0.018) * 52;
+      }
+      if (o.type === "snowball") o.roll += sp * 0.08;
+      if (o.type === "puddle") {
+        o.ripple += 0.15;
+        // caes si los pies pisan el agua; saltando por encima pasas sin problema
+        const cx = penguin.x + penguinDims().w * 0.5;
+        if (penguin.onGround && cx > o.x && cx < o.x + o.w) { startDive(); return; }
+        continue;                       // el charco nunca te mata
+      }
+      if (hit(box, obstacleBox(o))) {
+        if (power === "shield") {
+          // el escudo rompe el obstáculo en vez de matarte
+          o.smashed = true;
+          shake = 6;
+          playCrash();
+          spawnParticles(o.x + o.w / 2, o.y - o.h / 2, 12,
+            { color: o.type === "bird" ? "#cdd6e6" : "#bfe6f6",
+              speed: 4, life: 26, gravity: 0.2, size: 2.6 });
+        } else {
+          gameOver();
+        }
       }
     }
+    obstacles = obstacles.filter((o) => !o.smashed && o.x + o.w > -10);
   }
-  obstacles = obstacles.filter((o) => !o.smashed && o.x + o.w > -10);
 
   // peces coleccionables: aparecen de vez en cuando y suman puntos
   coinTimer -= timeScale;
   if (coinTimer <= 0) { spawnCoin(); coinTimer = 130 + Math.random() * 170; }
   updateCoins(box);
+}
+
+// Polvo de nieve + aplastamiento al aterrizar (suelo o témpano).
+function landFX() {
+  const lw = penguinDims().w;
+  spawnParticles(penguin.x + lw * 0.45, penguin.y, 9,
+    { color: "#e3f3fc", speed: 2.6, life: 20, angle: -Math.PI / 2,
+      spread: Math.PI, gravity: 0.22, size: 2.4 });
+  squash = 0.9;
+}
+
+// --- Zona de hielo roto: entrada/salida, generación y física ----------------
+function enterFrozen() {
+  frozen = true;
+  obstacles = [];
+  floes = [];
+  signs = [];
+  ensureFloes();                 // primer témpano ancho bajo el pingüino
+  warnT = 150;                   // cartel "CAUTION — FROZEN ZONE"
+  signs.push({ x: W + 40 });     // letrero que entra rodando con el escenario
+  // efecto "se rompe el hielo": temblor sostenido + crujido + esquirlas por el suelo
+  quakeT = 32;          // ~0.5s de sacudida fuerte antes de calmarse
+  shake = 22;
+  playCrash();
+  for (let i = 0; i < 9; i++) {
+    spawnParticles(50 + i * 95, GROUND_Y, 7,
+      { color: "#dcf0fb", speed: 6, life: 34, angle: -Math.PI / 2,
+        spread: Math.PI * 0.9, gravity: 0.32, size: 3.4, lift: 3 });
+  }
+}
+
+function exitFrozen() {
+  frozen = false;
+  floes = [];
+  signs = [];
+  penguin.y = GROUND_Y;
+  penguin.vy = 0;
+  penguin.onGround = true;
+}
+
+// ¿estamos en los últimos puntos del bioma helado? -> pista sólida de salida
+function frozenExiting() {
+  const within = score - biomeIndex() * BIOME_LEN;
+  return within > BIOME_LEN - FLOE_RUNOUT;
+}
+
+// Rellena la lista de témpanos hasta cubrir más allá del borde derecho.
+function ensureFloes() {
+  let right = floes.length ? floes[floes.length - 1].x + floes[floes.length - 1].w : 0;
+  // primer témpano: ancho y a ras de suelo, cubriendo al pingüino (x=70)
+  if (floes.length === 0) {
+    floes.push({ x: -20, w: 300, topY: GROUND_Y });   // pista inicial amplia
+    right = 280;
+  }
+  while (right < W + 220) {
+    let gap, w, topY;
+    if (frozenExiting()) {
+      // tramo final: hielo continuo y plano para volver al suelo normal
+      gap = 0; w = 260; topY = GROUND_Y;
+    } else {
+      // Témpanos anchos + huecos acotados: con el salto (~277px de alcance a
+      // velocidad fija) un brinco SIEMPRE cae en el siguiente témpano, nunca lo
+      // sobrevuela (gap + ancho >= 290 > 277). El reto es el timing del salto.
+      gap = 90 + Math.random() * 40;                 // 90..130 px
+      w = 200 + Math.random() * 80;                  // 200..280 px
+      topY = FLOE_LEVELS[Math.floor(Math.random() * FLOE_LEVELS.length)];
+    }
+    const x = right + gap;
+    floes.push({ x, w, topY });
+    right = x + w;
+  }
+}
+
+// Aterrizaje sobre témpanos. La ÚNICA forma de morir es caer al agua (a un
+// hueco): si hay un témpano bajo los pies, se aterriza sobre él (indulgente).
+function handleFloeLanding() {
+  const footX = penguin.x + penguinDims().w * 0.5;
+  let support = null;
+  for (const f of floes) {
+    if (footX >= f.x && footX <= f.x + f.w) { support = f; break; }
+  }
+  if (support) {
+    if (penguin.vy >= 0 && penguin.y >= support.topY) {
+      if (!penguin.onGround) landFX();
+      penguin.y = support.topY;
+      penguin.vy = 0;
+      penguin.onGround = true;
+    } else {
+      penguin.onGround = false;    // subiendo o aún por encima del témpano
+    }
+  } else {
+    penguin.onGround = false;      // sobre un hueco
+    if (penguin.y >= GROUND_Y + 4) startFreeze();   // tocaste el agua -> congelación
+  }
+}
+
+// --- Congelación: el pingüino cae al agua y queda atrapado en un bloque ------
+function startFreeze() {
+  if (freezing) return;
+  freezing = true;
+  freezeT = FREEZE_DUR;
+  iceTrap = true;
+  penguin.onGround = false;
+  penguin.ducking = false;
+  shake = 8;
+  playSplash();
+  spawnParticles(penguin.x + penguinDims().w * 0.5, GROUND_Y, 20,
+    { color: "#bfe6f6", speed: 4.5, life: 30, gravity: 0.25, size: 3, lift: 3 });
+}
+
+function updateFreeze() {
+  freezeT--;
+  // se hunde un poco hasta quedar atrapado en el hielo
+  penguin.y = Math.min(penguin.y + 2.2, GROUND_Y + 24);
+  if (freezeT <= 0) { freezing = false; gameOver("Frozen!"); }
 }
 
 // --- Transición DIVE: el pingüino se hunde tras pisar el charco -------------
@@ -1105,6 +1352,7 @@ function draw() {
   drawPowerHud();
   drawSwimHud();
   drawBanner();
+  drawWarn();
   drawPowerBanner();
   drawVersion();
   if (paused) drawPauseScreen();
@@ -1236,12 +1484,20 @@ function drawPowerBanner() {
 
 // --- Cielo con biomas: día → atardecer → noche, cambia cada 450 pts --------
 const SKIES = [
-  ["#bfe9ff", "#e8f7ff", "#ffffff"], // día
-  ["#ffcaa0", "#ffb3a7", "#ffe7d4"], // atardecer
-  ["#15263b", "#21405e", "#41637f"], // noche
+  ["#bfe9ff", "#e8f7ff", "#ffffff"], // 0 día
+  ["#ffcaa0", "#ffb3a7", "#ffe7d4"], // 1 atardecer
+  ["#15263b", "#21405e", "#41637f"], // 2 noche
+  ["#cfe8f5", "#e6f4fb", "#ffffff"], // 3 ZONA HELADA (cielo pálido y frío)
 ];
+// Terreno de cada bioma (paralelo a SKIES): suelo continuo o hielo roto.
+const TERRAINS = ["solid", "solid", "solid", "floes"];
+const NIGHT_IDX = 2;     // índice del bioma nocturno (para las estrellas)
 const BIOME_LEN = 450;   // puntos que dura cada bioma
 const BIOME_FADE = 90;   // puntos de fundido suave al final de cada bioma
+const FLOE_RUNOUT = 130; // últimos puntos del bioma helado: pista sólida de salida
+
+function biomeIndex() { return Math.floor(score / BIOME_LEN); }
+function terrainAt(idx) { return TERRAINS[idx % TERRAINS.length]; }
 
 function hexToRgb(h) {
   const n = parseInt(h.slice(1), 16);
@@ -1271,8 +1527,8 @@ function skyState() {
 function nightness() {
   if (state !== State.PLAYING) return 0;
   const { idx, t } = skyState();
-  const curNight = (idx % 3) === 2;
-  const nextNight = ((idx + 1) % 3) === 2;
+  const curNight = (idx % SKIES.length) === NIGHT_IDX;
+  const nextNight = ((idx + 1) % SKIES.length) === NIGHT_IDX;
   if (curNight) return 1 - t;        // de noche, quizá saliendo hacia el día
   if (nextNight) return t;           // entrando a la noche
   return 0;
@@ -1379,6 +1635,7 @@ function drawBackground() {
 }
 
 function drawGround() {
+  if (frozen) { drawFrozenGround(); return; }
   groundOffset = (groundOffset + speed * timeScale) % 40;
   ctx.strokeStyle = "#8fb8cc";
   ctx.lineWidth = 3;
@@ -1391,6 +1648,81 @@ function drawGround() {
   for (let x = -groundOffset; x < W; x += 40) {
     ctx.fillRect(x, GROUND_Y + 10, 12, 3);
   }
+}
+
+// Zona de hielo roto: mar de fondo + témpanos a distintas alturas + letreros.
+function drawFrozenGround() {
+  // mar
+  const g = ctx.createLinearGradient(0, GROUND_Y - 6, 0, H);
+  g.addColorStop(0, "#7ec7e6");
+  g.addColorStop(1, "#2b7aa3");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  // destellos de la superficie del agua
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  const off = (frame * FROZEN_SPEED * timeScale) % 30;
+  for (let x = -off; x < W; x += 30) ctx.fillRect(x, GROUND_Y + 3, 14, 2);
+  // témpanos
+  for (const f of floes) drawFloe(f);
+  // letreros de advertencia
+  for (const s of signs) drawSign(s);
+}
+
+function drawFloe(f) {
+  const bob = Math.sin(frame * 0.05 + f.x * 0.02) * 1.5;
+  const top = f.topY + bob;
+  // cuerpo de hielo (se ensancha un poco hacia abajo, como un témpano)
+  ctx.fillStyle = "#dcf0fb";
+  ctx.beginPath();
+  ctx.moveTo(f.x - 4, top);
+  ctx.lineTo(f.x + f.w + 4, top);
+  ctx.lineTo(f.x + f.w - 6, GROUND_Y + 26);
+  ctx.lineTo(f.x + 6, GROUND_Y + 26);
+  ctx.closePath();
+  ctx.fill();
+  // superficie nevada
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(f.x - 4, top - 4, f.w + 8, 7);
+  // sombra/cara azul bajo la superficie
+  ctx.fillStyle = "#aed6ec";
+  ctx.fillRect(f.x + 2, top + 5, f.w - 4, 5);
+}
+
+function drawSign(s) {
+  const x = s.x, base = GROUND_Y;
+  // poste
+  ctx.fillStyle = "#8a6a44";
+  ctx.fillRect(x - 3, base - 58, 6, 58);
+  // tabla
+  const bw = 130, bh = 36, bx = x - bw / 2, by = base - 96;
+  ctx.fillStyle = "#ffd34d";
+  ctx.strokeStyle = "#b9810a";
+  ctx.lineWidth = 3;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = "#1c2b3a";
+  ctx.font = "bold 13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("⚠ FROZEN ZONE", x, by + 23);
+  ctx.textAlign = "left";
+}
+
+// Cartel parpadeante al entrar a la zona helada.
+function drawWarn() {
+  if (warnT <= 0) return;
+  const fade = warnT > 120 ? 1 : warnT / 120;
+  const blink = frame % 30 < 15 ? 1 : 0.5;
+  ctx.save();
+  ctx.globalAlpha = fade * blink;
+  ctx.textAlign = "center";
+  ctx.font = "bold 26px system-ui, sans-serif";
+  const txt = "⚠ CAUTION — FROZEN ZONE ⚠";
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "#0b1e2d";
+  ctx.strokeText(txt, W / 2, 42);
+  ctx.fillStyle = "#9fe3ff";
+  ctx.fillText(txt, W / 2, 42);
+  ctx.restore();
 }
 
 function drawObstacle(o) {
@@ -1632,6 +1964,31 @@ function drawPenguin() {
   } else {
     drawPlaceholderPenguin(dx, dy, w, h, running);
   }
+  // bloque de hielo cuando el pingüino cae al agua en la zona helada
+  if (iceTrap) drawIceBlock(dx, dy, w, h);
+  ctx.restore();
+}
+
+// Cubo de hielo translúcido que atrapa al pingüino al congelarse.
+function drawIceBlock(dx, dy, w, h) {
+  const pad = 6;
+  const x = dx - pad, y = dy - pad, bw = w + pad * 2, bh = h + pad * 2;
+  ctx.save();
+  ctx.fillStyle = "rgba(178, 228, 248, 0.42)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, bw, bh, 8);
+  else ctx.rect(x, y, bw, bh);
+  ctx.fill();
+  ctx.stroke();
+  // brillos diagonales de hielo
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + bw * 0.18, y + bh - 4); ctx.lineTo(x + bw * 0.5, y + 4);
+  ctx.moveTo(x + bw * 0.5, y + bh - 4);  ctx.lineTo(x + bw * 0.82, y + 4);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1701,17 +2058,16 @@ function loop(now) {
     updateSnow();
     if (waterFade() > 0) updateBubbles();
     updateParticles();
-    shake = shake > 0.5 ? shake * 0.86 : 0;
+    if (quakeT > 0) { quakeT--; shake = 14 + Math.random() * 8; }   // temblor sostenido
+    else shake = shake > 0.5 ? shake * 0.86 : 0;
   }
   draw();
   requestAnimationFrame(loop);
 }
 
 loadImages(() => {
-  // ajusta el aspecto al de los sprites reales para no deformarlos
-  const standImg = images.run1 || images.run2 || images.jump;
-  if (standImg) aspect.stand = standImg.width / standImg.height;
-  if (images.duck) aspect.duck = images.duck.width / images.duck.height;
+  // activa el personaje guardado (reapunta sprites + ajusta aspecto al real)
+  selectCharacter(selectedChar);
   initSnow();
   initStars();
   initBubbles();
