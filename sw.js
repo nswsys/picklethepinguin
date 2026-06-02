@@ -1,6 +1,6 @@
 // Service worker de Pickle the Penguin — cachea todo para que funcione
 // offline y la PWA sea instalable. Sube CACHE al cambiar archivos.
-const CACHE = "pickle-v11";
+const CACHE = "pickle-v12";
 const ASSETS = [
   "./",
   "./index.html",

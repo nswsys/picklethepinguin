@@ -129,6 +129,29 @@ canvas {
   transform: translateY(-2px);
 }
 
+/* ---- Toggle de dificultad ---- */
+#diff-select {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+.diff-btn {
+  padding: 5px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #e8f4ff;
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(11px, 2.2vw, 14px);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.diff-btn.active {
+  border-color: #7dff9b;
+  background: rgba(125, 255, 155, 0.18);
+}
+
 /* ---- Tabla de récords + entrada de nombre ---- */
 #name-form { display: flex; gap: 8px; pointer-events: auto; }
 #name-form.hidden, #leaderboard.hidden { display: none; }
