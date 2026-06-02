@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v13";
+const VERSION = "v14";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas de cada personaje en CHARACTERS. Si una ruta
@@ -368,11 +368,11 @@ const FREEZE_DUR = 46;     // frames de la animación de congelación
 const FLOE_LEVELS = [GROUND_Y, GROUND_Y - 18, GROUND_Y - 34]; // alturas posibles (escalones suaves)
 // Scroll FIJO en la zona helada: el reto de saltar huecos debe ser justo a
 // cualquier puntuación (si usáramos `speed`, a score alto sería imposible).
-const FROZEN_SPEED = 7.5;
+const FROZEN_SPEED = 7.0;
 // Témpanos que se hunden: si te quedas parado en uno marcado, tras un margen
 // empieza a bajar y, si no saltas, se sumerge y te congela (premia el ritmo).
 const SINK_CHANCE = 0.45;     // proporción de témpanos hundibles
-const SINK_DELAY = 26;        // frames parado antes de empezar a hundirse
+const SINK_DELAY = 40;        // frames parado antes de empezar a hundirse
 const SINK_RATE = 1.1;        // px/frame que baja una vez activado
 const SINK_SUBMERGE = 10;     // px bajo el suelo a los que se considera sumergido
 
@@ -385,7 +385,7 @@ let chaseT = 0;            // frames restantes del tramo
 let chaseLead = 0;        // distancia (px) hasta el oso; 0 = atrapado
 let chaseInvT = 0;        // i-frames tras un tropiezo (evita multi-golpe)
 let lastChaseScore = 0;   // score del último inicio (ritmo entre persecuciones)
-const CHASE_DUR = 540;        // ~9 s de persecución
+const CHASE_DUR = 900;        // ~15 s de persecución
 const CHASE_START_LEAD = 210; // distancia inicial
 const CHASE_MAX_LEAD = 240;   // tope (no se aleja más)
 const CHASE_EVERY = 650;      // puntos mínimos entre persecuciones
@@ -1164,9 +1164,10 @@ function updateChase() {
   // dispara una nueva persecución cada cierto avance (no en cuanto arrancas)
   if (!chasing && score > 300 && score - lastChaseScore >= CHASE_EVERY) startChase();
   if (!chasing) return;
-  // el oso ACELERA: al principio te dejas distancia, al final recorta fuerte
+  // el oso ACELERA: al principio te dejas algo de distancia y al final recorta
+  // fuerte. Sin chocar se sobrevive justo (acaba cerca); cada tropiezo lo acerca.
   const prog = 1 - chaseT / CHASE_DUR;          // 0..1
-  chaseLead = Math.min(CHASE_MAX_LEAD, chaseLead + (0.2 - prog * 0.9) * timeScale);
+  chaseLead = Math.min(CHASE_MAX_LEAD, chaseLead + (0.15 - prog * 0.7) * timeScale);
   chaseT -= timeScale;
   if (chaseInvT > 0) chaseInvT--;
   if (chaseLead <= 0) { chasing = false; gameOver("Caught!"); return; }
@@ -1181,7 +1182,7 @@ function enterFrozen() {
   signs = [];
   ensureFloes();                 // primer témpano ancho bajo el pingüino
   chasing = false;               // no coexiste con la persecución del oso
-  warnT = 150;                   // cartel de aviso
+  warnT = 140;                   // cartel de aviso (acompaña la preparación)
   warnText = "⚠ CAUTION — FROZEN ZONE ⚠";
   warnColor = "#9fe3ff";
   signs.push({ x: W + 40 });     // letrero que entra rodando con el escenario
@@ -1214,10 +1215,11 @@ function frozenExiting() {
 // Rellena la lista de témpanos hasta cubrir más allá del borde derecho.
 function ensureFloes() {
   let right = floes.length ? floes[floes.length - 1].x + floes[floes.length - 1].w : 0;
-  // primer témpano: ancho, a ras de suelo y FIRME (no se hunde), cubre x=70
+  // primer témpano: pista LARGA, a ras de suelo y FIRME (no se hunde). Da tiempo
+  // de leer el aviso y prepararse antes del primer hueco (~1.8s).
   if (floes.length === 0) {
-    floes.push({ x: -20, w: 300, topY: GROUND_Y, sink: false, stood: 0 });
-    right = 280;
+    floes.push({ x: -40, w: 900, topY: GROUND_Y, sink: false, stood: 0 });
+    right = 860;
   }
   while (right < W + 220) {
     let gap, w, topY, sink = false;
@@ -1903,7 +1905,9 @@ function drawChase() {
   // a los ~64px disponibles: el oso (enorme, saliéndose por el borde) asoma
   // siempre y su cabeza se acerca al pingüino conforme baja el lead.
   const frac = Math.max(0, Math.min(1, chaseLead / CHASE_MAX_LEAD));
-  const noseX = penguin.x - 4 - frac * 64;   // hocico: ~x6 (lejos) .. x66 (encima)
+  // la cabeza del oso queda SIEMPRE a la vista (acechando) y se acerca al
+  // pingüino conforme baja el lead: hocico de ~x40 (lejos) a ~x70 (te atrapa)
+  const noseX = penguin.x - frac * 30;
   drawPolarBear(noseX - BEAR_W, GROUND_Y);
   if (chaseLead < 80) {                     // peligro: bordes rojos al acercarse
     const a = (1 - chaseLead / 80) * 0.5;
