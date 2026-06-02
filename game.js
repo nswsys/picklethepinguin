@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v11";
+const VERSION = "v12";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas de cada personaje en CHARACTERS. Si una ruta
@@ -151,6 +151,35 @@ for (const btn of charButtons) {
   });
 }
 
+// Toggle de dificultad en la pantalla de inicio (Normal / Easy).
+const diffButtons = Array.from(document.querySelectorAll(".diff-btn"));
+
+function selectDifficulty(id) {
+  if (!DIFFS[id]) id = "normal";
+  difficulty = id;
+  try { localStorage.setItem(DIFF_KEY, id); } catch (e) {}
+  const d = DIFFS[id];
+  BASE_SPEED = d.base;
+  MAX_SPEED = d.max;
+  speedRampDiv = d.rampDiv;
+  spawnGapMul = d.spawnMul;
+  updateDiffUI();
+}
+
+function updateDiffUI() {
+  for (const btn of diffButtons) {
+    btn.classList.toggle("active", btn.dataset.diff === difficulty);
+  }
+}
+
+for (const btn of diffButtons) {
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectDifficulty(btn.dataset.diff);
+  });
+}
+
 // ---------------------------------------------------------------------------
 //  Estado del juego
 // ---------------------------------------------------------------------------
@@ -242,8 +271,19 @@ function skipName() {
 nameSkip.addEventListener("click", skipName);
 
 let speed = 6;           // velocidad de scroll (px por frame a 60fps)
-const BASE_SPEED = 6;
-const MAX_SPEED = 15;
+
+// Dificultad: "normal" o "easy" (más lenta y espaciada, para los más peques).
+// Se elige con un toggle en la pantalla de inicio y persiste en localStorage.
+const DIFF_KEY = "pickle_diff";
+const DIFFS = {
+  normal: { base: 6, max: 15, rampDiv: 120, spawnMul: 1.0 },
+  easy:   { base: 5, max: 10, rampDiv: 210, spawnMul: 1.4 },
+};
+let difficulty = DIFFS[localStorage.getItem(DIFF_KEY)] ? localStorage.getItem(DIFF_KEY) : "normal";
+let BASE_SPEED = DIFFS[difficulty].base;   // velocidad inicial (según dificultad)
+let MAX_SPEED = DIFFS[difficulty].max;     // velocidad tope
+let speedRampDiv = DIFFS[difficulty].rampDiv;  // a mayor divisor, acelera más lento
+let spawnGapMul = DIFFS[difficulty].spawnMul;  // separación entre obstáculos
 
 // El pingüino
 const penguin = {
@@ -319,6 +359,8 @@ let frozen = false;        // ¿estamos en la zona de hielo roto?
 let floes = [];            // témpanos: { x, w, topY }
 let signs = [];            // letreros "FROZEN ZONE" (decorativos, no chocan)
 let warnT = 0;             // frames restantes del cartel de advertencia
+let warnText = "";         // texto del cartel (zona helada / oso)
+let warnColor = "#9fe3ff"; // color del cartel
 let freezing = false;      // animación de congelación en curso (cayó al agua)
 let freezeT = 0;           // frames restantes de la congelación
 let iceTrap = false;       // dibujar el bloque de hielo sobre el pingüino
@@ -327,6 +369,29 @@ const FLOE_LEVELS = [GROUND_Y, GROUND_Y - 18, GROUND_Y - 34]; // alturas posible
 // Scroll FIJO en la zona helada: el reto de saltar huecos debe ser justo a
 // cualquier puntuación (si usáramos `speed`, a score alto sería imposible).
 const FROZEN_SPEED = 7.5;
+// Témpanos que se hunden: si te quedas parado en uno marcado, tras un margen
+// empieza a bajar y, si no saltas, se sumerge y te congela (premia el ritmo).
+const SINK_CHANCE = 0.45;     // proporción de témpanos hundibles
+const SINK_DELAY = 26;        // frames parado antes de empezar a hundirse
+const SINK_RATE = 1.1;        // px/frame que baja una vez activado
+const SINK_SUBMERGE = 10;     // px bajo el suelo a los que se considera sumergido
+
+// --- Persecución de jefe: un OSO POLAR gigante te persigue desde atrás -------
+// Aparece por tramos. Durante la persecución los obstáculos NO matan: tropiezas
+// y el oso recorta distancia. Si te alcanza (lead <= 0) -> game over. Sobrevive
+// al tramo y el oso se rinde. El oso acelera conforme avanza el tramo.
+let chasing = false;
+let chaseT = 0;            // frames restantes del tramo
+let chaseLead = 0;        // distancia (px) hasta el oso; 0 = atrapado
+let chaseInvT = 0;        // i-frames tras un tropiezo (evita multi-golpe)
+let lastChaseScore = 0;   // score del último inicio (ritmo entre persecuciones)
+const CHASE_DUR = 540;        // ~9 s de persecución
+const CHASE_START_LEAD = 210; // distancia inicial
+const CHASE_MAX_LEAD = 240;   // tope (no se aleja más)
+const CHASE_EVERY = 650;      // puntos mínimos entre persecuciones
+const CHASE_HIT_COST = 70;    // distancia perdida al tropezar con un obstáculo
+const CHASE_FISH_GAIN = 22;   // distancia recuperada al comer un pez
+const BEAR_W = 150, BEAR_H = 120;
 
 // Power-ups: al comer FISH_PER_POWERUP peces se activa uno AL AZAR.
 let fishEaten = 0;       // peces comidos hacia el próximo power-up
@@ -407,9 +472,9 @@ function spawnObstacle() {
 }
 
 function nextSpawnGap() {
-  // a mayor velocidad, obstáculos algo más juntos
+  // a mayor velocidad, obstáculos algo más juntos; en fácil van más espaciados
   const base = 90 - (speed - BASE_SPEED) * 3;
-  return base + Math.random() * 60;
+  return (base + Math.random() * 60) * spawnGapMul;
 }
 
 // pez coleccionable: da puntos extra al recogerlo en el aire o en el suelo
@@ -840,9 +905,15 @@ function start() {
   floes = [];
   signs = [];
   warnT = 0;
+  warnText = "";
   freezing = false;
   freezeT = 0;
   iceTrap = false;
+  chasing = false;
+  chaseT = 0;
+  chaseLead = 0;
+  chaseInvT = 0;
+  lastChaseScore = 0;
   penguin.y = GROUND_Y;
   penguin.vy = 0;
   penguin.onGround = true;
@@ -902,7 +973,7 @@ function update() {
 // velocidad y puntuación: avanzan tanto corriendo como nadando
 function advanceScore() {
   score += 0.15 * (speed / BASE_SPEED);
-  speed = Math.min(MAX_SPEED, BASE_SPEED + score / 120);
+  speed = Math.min(MAX_SPEED, BASE_SPEED + score / speedRampDiv);
   scoreEl.textContent = String(Math.floor(score)).padStart(4, "0");
   const milestone = Math.floor(score / 100);
   if (milestone > lastMilestone) { lastMilestone = milestone; playPoint(); }
@@ -925,6 +996,8 @@ function updateCoins(box) {
       c.collected = true;
       score += 25;
       playChomp();
+      // durante la persecución, cada pez te da un empujón de ventaja sobre el oso
+      if (chasing) chaseLead = Math.min(CHASE_MAX_LEAD, chaseLead + CHASE_FISH_GAIN);
       spawnParticles(c.x, c.y, 8,
         { color: "#ffd34d", speed: 2.4, life: 24, gravity: 0.05, size: 2.4 });
       if (!power && ++fishEaten >= FISH_PER_POWERUP) {
@@ -962,6 +1035,10 @@ function updateRun() {
 
   advanceScore();
   if (warnT > 0) warnT--;
+
+  // persecución del oso polar (dispara/avanza; puede terminar la partida)
+  updateChase();
+  if (state === State.OVER) return;
 
   // ¡superaste tu récord! -> recompensa de peces (una vez por partida)
   if (!celebrated && prevBest > 0 && score > prevBest) spawnFishReward();
@@ -1002,7 +1079,18 @@ function updateRun() {
         continue;                       // el charco nunca te mata
       }
       if (hit(box, obstacleBox(o))) {
-        if (power === "shield") {
+        if (chasing) {
+          // durante la persecución no mueres: tropiezas y el oso recorta
+          if (chaseInvT <= 0) {
+            o.smashed = true;
+            chaseLead -= CHASE_HIT_COST;
+            chaseInvT = 36;
+            shake = 9;
+            playCrash();
+            spawnParticles(o.x + o.w / 2, o.y - o.h / 2, 12,
+              { color: "#ffd0d0", speed: 4, life: 26, gravity: 0.2, size: 2.6 });
+          }
+        } else if (power === "shield") {
           // el escudo rompe el obstáculo en vez de matarte
           o.smashed = true;
           shake = 6;
@@ -1033,6 +1121,42 @@ function landFX() {
   squash = 0.9;
 }
 
+// --- Persecución del oso polar ----------------------------------------------
+function startChase() {
+  chasing = true;
+  chaseT = CHASE_DUR;
+  chaseLead = CHASE_START_LEAD;
+  chaseInvT = 0;
+  lastChaseScore = score;
+  warnT = 150;
+  warnText = "⚠ RUN! POLAR BEAR! ⚠";
+  warnColor = "#ffd0d0";
+  shake = 10;
+  playCrash();
+}
+
+function endChase() {
+  chasing = false;
+  chaseLead = 0;
+  warnT = 90;
+  warnText = "PHEW! YOU ESCAPED! 🐧";
+  warnColor = "#9fff9f";
+}
+
+function updateChase() {
+  if (frozen) return;     // no coexiste con la zona helada
+  // dispara una nueva persecución cada cierto avance (no en cuanto arrancas)
+  if (!chasing && score > 300 && score - lastChaseScore >= CHASE_EVERY) startChase();
+  if (!chasing) return;
+  // el oso ACELERA: al principio te dejas distancia, al final recorta fuerte
+  const prog = 1 - chaseT / CHASE_DUR;          // 0..1
+  chaseLead = Math.min(CHASE_MAX_LEAD, chaseLead + (0.2 - prog * 0.9) * timeScale);
+  chaseT -= timeScale;
+  if (chaseInvT > 0) chaseInvT--;
+  if (chaseLead <= 0) { chasing = false; gameOver("Caught!"); return; }
+  if (chaseT <= 0) endChase();
+}
+
 // --- Zona de hielo roto: entrada/salida, generación y física ----------------
 function enterFrozen() {
   frozen = true;
@@ -1040,7 +1164,10 @@ function enterFrozen() {
   floes = [];
   signs = [];
   ensureFloes();                 // primer témpano ancho bajo el pingüino
-  warnT = 150;                   // cartel "CAUTION — FROZEN ZONE"
+  chasing = false;               // no coexiste con la persecución del oso
+  warnT = 150;                   // cartel de aviso
+  warnText = "⚠ CAUTION — FROZEN ZONE ⚠";
+  warnColor = "#9fe3ff";
   signs.push({ x: W + 40 });     // letrero que entra rodando con el escenario
   // efecto "se rompe el hielo": temblor sostenido + crujido + esquirlas por el suelo
   quakeT = 32;          // ~0.5s de sacudida fuerte antes de calmarse
@@ -1071,15 +1198,15 @@ function frozenExiting() {
 // Rellena la lista de témpanos hasta cubrir más allá del borde derecho.
 function ensureFloes() {
   let right = floes.length ? floes[floes.length - 1].x + floes[floes.length - 1].w : 0;
-  // primer témpano: ancho y a ras de suelo, cubriendo al pingüino (x=70)
+  // primer témpano: ancho, a ras de suelo y FIRME (no se hunde), cubre x=70
   if (floes.length === 0) {
-    floes.push({ x: -20, w: 300, topY: GROUND_Y });   // pista inicial amplia
+    floes.push({ x: -20, w: 300, topY: GROUND_Y, sink: false, stood: 0 });
     right = 280;
   }
   while (right < W + 220) {
-    let gap, w, topY;
+    let gap, w, topY, sink = false;
     if (frozenExiting()) {
-      // tramo final: hielo continuo y plano para volver al suelo normal
+      // tramo final: hielo continuo, plano y firme para volver al suelo normal
       gap = 0; w = 260; topY = GROUND_Y;
     } else {
       // Témpanos anchos + huecos acotados: con el salto (~277px de alcance a
@@ -1088,9 +1215,10 @@ function ensureFloes() {
       gap = 90 + Math.random() * 40;                 // 90..130 px
       w = 200 + Math.random() * 80;                  // 200..280 px
       topY = FLOE_LEVELS[Math.floor(Math.random() * FLOE_LEVELS.length)];
+      sink = Math.random() < SINK_CHANCE;            // algunos se hunden si te paras
     }
     const x = right + gap;
-    floes.push({ x, w, topY });
+    floes.push({ x, w, topY, sink, stood: 0 });
     right = x + w;
   }
 }
@@ -1101,11 +1229,25 @@ function handleFloeLanding() {
   const footX = penguin.x + penguinDims().w * 0.5;
   let support = null;
   for (const f of floes) {
-    if (footX >= f.x && footX <= f.x + f.w) { support = f; break; }
+    // los témpanos ya sumergidos no sostienen
+    if (!f.submerged && footX >= f.x && footX <= f.x + f.w) { support = f; break; }
   }
   if (support) {
     if (penguin.vy >= 0 && penguin.y >= support.topY) {
       if (!penguin.onGround) landFX();
+      // témpano hundible: si te quedas parado, tras un margen empieza a bajar;
+      // si no saltas a tiempo, se sumerge y te congela.
+      if (support.sink) {
+        support.stood++;
+        if (support.stood > SINK_DELAY) {
+          support.topY += SINK_RATE;
+          if (support.topY >= GROUND_Y + SINK_SUBMERGE) {
+            support.submerged = true;
+            startFreeze();
+            return;
+          }
+        }
+      }
       penguin.y = support.topY;
       penguin.vy = 0;
       penguin.onGround = true;
@@ -1344,6 +1486,7 @@ function draw() {
   }
   for (const c of coins) drawFish(c.x, c.y + Math.sin(c.bob) * 3, c.r);
   for (const o of obstacles) drawObstacle(o);
+  if (chasing) drawChase();
   drawPenguin();
   drawParticles();
   for (const f of fishes) if (f.delay <= 0) drawFish(f.x, f.y, 11);
@@ -1669,10 +1812,13 @@ function drawFrozenGround() {
 }
 
 function drawFloe(f) {
+  const sinking = f.sink && f.stood > SINK_DELAY;
+  // tiembla justo antes/durante el hundimiento
+  const shudder = sinking ? (Math.random() - 0.5) * 2 : 0;
   const bob = Math.sin(frame * 0.05 + f.x * 0.02) * 1.5;
-  const top = f.topY + bob;
-  // cuerpo de hielo (se ensancha un poco hacia abajo, como un témpano)
-  ctx.fillStyle = "#dcf0fb";
+  const top = f.topY + bob + shudder;
+  // cuerpo de hielo (los hundibles, más grisáceos como aviso)
+  ctx.fillStyle = f.sink ? "#c7dcea" : "#dcf0fb";
   ctx.beginPath();
   ctx.moveTo(f.x - 4, top);
   ctx.lineTo(f.x + f.w + 4, top);
@@ -1684,8 +1830,18 @@ function drawFloe(f) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(f.x - 4, top - 4, f.w + 8, 7);
   // sombra/cara azul bajo la superficie
-  ctx.fillStyle = "#aed6ec";
+  ctx.fillStyle = f.sink ? "#9cc0d8" : "#aed6ec";
   ctx.fillRect(f.x + 2, top + 5, f.w - 4, 5);
+  // grietas: aviso de que este témpano se hunde si te paras
+  if (f.sink) {
+    ctx.strokeStyle = "rgba(70,110,140,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const cx = f.x + f.w * 0.5;
+    ctx.moveTo(cx - 18, top + 2); ctx.lineTo(cx - 4, top + 12); ctx.lineTo(cx - 10, top + 22);
+    ctx.moveTo(cx + 16, top + 2); ctx.lineTo(cx + 4, top + 13); ctx.lineTo(cx + 12, top + 22);
+    ctx.stroke();
+  }
 }
 
 function drawSign(s) {
@@ -1716,12 +1872,71 @@ function drawWarn() {
   ctx.globalAlpha = fade * blink;
   ctx.textAlign = "center";
   ctx.font = "bold 26px system-ui, sans-serif";
-  const txt = "⚠ CAUTION — FROZEN ZONE ⚠";
+  const txt = warnText || "⚠ CAUTION ⚠";
   ctx.lineWidth = 6;
   ctx.strokeStyle = "#0b1e2d";
   ctx.strokeText(txt, W / 2, 42);
-  ctx.fillStyle = "#9fe3ff";
+  ctx.fillStyle = warnColor;
   ctx.fillText(txt, W / 2, 42);
+  ctx.restore();
+}
+
+// El oso polar perseguidor + viñeta de peligro cuando está cerca.
+function drawChase() {
+  // El pingüino corre pegado a la izquierda, así que mapeamos la distancia real
+  // a los ~64px disponibles: el oso (enorme, saliéndose por el borde) asoma
+  // siempre y su cabeza se acerca al pingüino conforme baja el lead.
+  const frac = Math.max(0, Math.min(1, chaseLead / CHASE_MAX_LEAD));
+  const noseX = penguin.x - 4 - frac * 64;   // hocico: ~x6 (lejos) .. x66 (encima)
+  drawPolarBear(noseX - BEAR_W, GROUND_Y);
+  if (chaseLead < 80) {                     // peligro: bordes rojos al acercarse
+    const a = (1 - chaseLead / 80) * 0.5;
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.7);
+    g.addColorStop(0, "rgba(200,0,0,0)");
+    g.addColorStop(1, `rgba(190,0,0,${a})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function drawPolarBear(x, base) {
+  const cx = x + BEAR_W * 0.5;
+  const gallop = Math.sin(frame * 0.4) * 7;
+  ctx.save();
+  // patas (galope)
+  ctx.fillStyle = "#dbe7f2";
+  ctx.fillRect(x + 28, base - 34, 20, 34 + gallop * 0.4);
+  ctx.fillRect(x + BEAR_W - 58, base - 34, 20, 34 - gallop * 0.4);
+  ctx.fillRect(x + 58, base - 30, 18, 30 - gallop * 0.4);
+  ctx.fillRect(x + BEAR_W - 88, base - 30, 18, 30 + gallop * 0.4);
+  // cuerpo + ancas
+  ctx.fillStyle = "#f3f7fc";
+  ctx.beginPath(); ctx.ellipse(cx - 6, base - 58, BEAR_W * 0.46, 46, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 34, base - 60, 42, 44, 0, 0, Math.PI * 2); ctx.fill();
+  // cabeza (mirando al pingüino, a la derecha)
+  const hx = x + BEAR_W - 26, hy = base - 80;
+  ctx.beginPath(); ctx.arc(hx, hy, 34, 0, Math.PI * 2); ctx.fill();
+  // oreja
+  ctx.beginPath(); ctx.arc(hx - 20, hy - 26, 11, 0, Math.PI * 2); ctx.fill();
+  // hocico
+  ctx.fillStyle = "#e7eff8";
+  ctx.beginPath(); ctx.ellipse(hx + 20, hy + 8, 22, 16, 0, 0, Math.PI * 2); ctx.fill();
+  // nariz
+  ctx.fillStyle = "#2a2a33";
+  ctx.beginPath(); ctx.ellipse(hx + 38, hy + 3, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+  // ceja + ojo (gesto fiero)
+  ctx.strokeStyle = "#2a2a33"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(hx - 6, hy - 14); ctx.lineTo(hx + 12, hy - 8); ctx.stroke();
+  ctx.fillStyle = "#2a2a33";
+  ctx.beginPath(); ctx.arc(hx + 4, hy - 4, 4, 0, Math.PI * 2); ctx.fill();
+  // boca abierta con colmillos
+  ctx.fillStyle = "#7a1f25";
+  ctx.beginPath(); ctx.ellipse(hx + 26, hy + 20, 13, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(hx + 17, hy + 16); ctx.lineTo(hx + 21, hy + 24); ctx.lineTo(hx + 25, hy + 16);
+  ctx.lineTo(hx + 30, hy + 24); ctx.lineTo(hx + 34, hy + 16);
+  ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
@@ -2068,6 +2283,7 @@ function loop(now) {
 loadImages(() => {
   // activa el personaje guardado (reapunta sprites + ajusta aspecto al real)
   selectCharacter(selectedChar);
+  selectDifficulty(difficulty);   // aplica config + resalta el toggle guardado
   initSnow();
   initStars();
   initBubbles();
