@@ -4,7 +4,7 @@
 //  VERSION: súbela en cada cambio del juego. Se muestra en pantalla (abajo a la
 //  izquierda) para confirmar qué versión está corriendo, y debe coincidir con
 //  el número de CACHE en sw.js.
-const VERSION = "v12";
+const VERSION = "v13";
 // ---------------------------------------------------------------------------
 //  Para usar TUS fotos: pon los PNG (fondo transparente) en la carpeta
 //  /assets y rellena las rutas de cada personaje en CHARACTERS. Si una ruta
@@ -873,9 +873,6 @@ function start() {
   audio();              // "despierta" el audio con el gesto del usuario
   state = State.PLAYING;
   score = 0;
-  // Atajo de pruebas: abre la página con #frozen (p.ej. index.html#frozen) para
-  // empezar pegado a la zona helada en vez de jugar hasta llegar a ella.
-  if (/frozen/i.test(location.hash + location.search)) score = BIOME_LEN * 3 - 6;
   speed = BASE_SPEED;
   obstacles = [];
   spawnTimer = 30;
@@ -918,7 +915,26 @@ function start() {
   penguin.vy = 0;
   penguin.onGround = true;
   penguin.ducking = false;
+  applyTestHash();      // atajos de prueba por URL (#frozen, #bear, #swim, ...)
   overlay.classList.remove("show");
+}
+
+// Atajos de prueba: abre la página con un # para saltar directo a un nivel/modo.
+// Ej.: index.html#bear  ·  #frozen  ·  #swim  ·  #night  ·  #easy
+// Se relee en cada partida, así que al reintentar vuelves al mismo nivel.
+function applyTestHash() {
+  const h = (location.hash + " " + location.search).toLowerCase();
+  if (!h.trim()) return;
+  if (/easy/.test(h)) selectDifficulty("easy");
+  // bioma de arranque (cambia el cielo / activa la zona helada)
+  if (/frozen|ice|hielo/.test(h)) score = BIOME_LEN * 3 - 6;       // justo antes (ver el efecto)
+  else if (/sunset|atardecer/.test(h)) score = BIOME_LEN * 1 + 30; // dentro del atardecer
+  else if (/night|noche/.test(h)) score = BIOME_LEN * 2 + 30;      // dentro de la noche
+  // al saltar a un bioma alto, evita que el oso se dispare al instante
+  if (score > 0) lastChaseScore = score;
+  // eventos/modos que se activan al instante
+  if (/bear|oso|chase/.test(h)) startChase();
+  else if (/swim|dive|water|agua/.test(h)) startDive();
 }
 
 function gameOver(customWord) {
